@@ -1,7 +1,7 @@
 // HTTP + WebSocket server. Serves the sample library and hall recordings under /assets and runs
 // one composing session per socket.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import express from 'express';
@@ -11,6 +11,7 @@ import { apiKey } from './gateway/gateway.ts';
 import { modelFor } from './gateway/models.ts';
 import { pack, ROOT } from './pack.ts';
 import { Session } from './session.ts';
+import { scoresToMidi } from '../tools/midi.ts';
 
 const app = express();
 app.use('/assets', express.static(join(ROOT, 'assets'), { maxAge: '1h', fallthrough: false }));
@@ -49,6 +50,146 @@ app.get('/api/replay/:name', (req, res) => {
     return;
   }
   res.type('application/json').send(readFileSync(file, 'utf8'));
+});
+
+// ───────────────────────────── Commissions: the door an agent uses ─────────────────────────────
+// An agent harness such as Nace's Intern works from a terminal: it cannot hold a socket open or hear
+// audio. It posts a prompt here, polls until the piece is done, and gets back links a person can open
+// and a plain-text account of what Drex decided. The agent passes the prompt through untouched and
+// makes no musical choice: Drex still makes every one. See INTERN.md and AGENTS.md.
+interface Commission { id: string; prompt: string; status: 'composing' | 'done' | 'error'; phrases: number; total: number; error?: string; summary?: string; startedAt: number }
+const commissions = new Map<string, Commission>();
+const publicUrl = () => (process.env.PUBLIC_URL ?? '').replace(/\/$/, '') || (existsSync(join(ROOT, 'dist')) ? `http://localhost:${Number(process.env.PORT) || 8787}` : 'http://localhost:5173'); // in development the page is served by Vite
+/** With COMPOSER_TOKEN set, callers must send it as a Bearer token. Without it, only this machine may commission. */
+function allowed(req: express.Request): boolean {
+  const token = (process.env.COMPOSER_TOKEN ?? '').trim();
+  if (token) return req.get('authorization') === `Bearer ${token}`;
+  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') && !req.get('x-forwarded-for');
+}
+const view = (c: Commission) => ({
+  id: c.id, prompt: c.prompt, status: c.status, phrases_composed: c.phrases, phrases_total: c.total,
+  ...(c.error ? { error: c.error } : {}),
+  ...(c.status === 'done' ? { listen_url: `${publicUrl()}/?replay=${c.id}`, midi_url: `${publicUrl()}/api/commissions/${c.id}/piece.mid`, summary: c.summary } : {}),
+  status_url: `${publicUrl()}/api/commissions/${c.id}`,
+});
+
+app.post('/api/commissions', express.json({ limit: '10kb' }), (req, res) => {
+  if (!allowed(req)) { res.status(401).json({ error: 'Send the commission token as "Authorization: Bearer <token>".' }); return; }
+  const prompt = String(req.body?.prompt ?? '').trim().slice(0, 600);
+  if (!prompt) { res.status(400).json({ error: 'Send JSON with a "prompt": the words the piece should be composed from.' }); return; }
+  if ([...commissions.values()].some((c) => c.status === 'composing')) { res.status(429).json({ error: 'A piece is being composed. Try again in a minute.' }); return; }
+  const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'piece';
+  const id = `c-${slug}-${Date.now().toString(36)}`;
+  const c: Commission = { id, prompt, status: 'composing', phrases: 0, total: 0, startedAt: Date.now() };
+  commissions.set(id, c);
+  const events: ServerEvent[] = [];
+  const session = new Session({
+    prompt, paced: false,
+    send: (e) => {
+      events.push(e);
+      if (e.type === 'plan') c.total = e.plan.totalPhrases;
+      if (e.type === 'phrase') c.phrases += 1;
+      if (e.type === 'error') { c.status = 'error'; c.error = e.message; }
+    },
+  });
+  void session.run().then(() => {
+    if (c.status === 'error') return;
+    const scores = events.flatMap((e) => (e.type === 'phrase' ? [e.score] : []));
+    if (!scores.length) { c.status = 'error'; c.error = 'Nothing was composed.'; return; }
+    mkdirSync(join(RESULTS, id), { recursive: true });
+    writeFileSync(join(RESULTS, id, 'events.json'), JSON.stringify(events));
+    writeFileSync(join(RESULTS, id, 'piece.mid'), scoresToMidi(scores));
+    // What Drex decided, in plain words, for the agent to pass on. Facts only: nothing here is the agent's opinion.
+    const rules = events.find((e) => e.type === 'rules');
+    const plan = [...events].reverse().find((e) => e.type === 'plan');
+    const secs = Math.round(scores.reduce((t, s) => t + (s.beats * 60) / s.bpm, 0));
+    const r = rules?.type === 'rules' ? rules.rules : null;
+    const pl = plan?.type === 'plan' ? plan.plan : null;
+    c.summary = [
+      r ? `${r.styleName}${r.groove ? ` (${r.groove})` : ''}, ${r.keyName}, ${r.bpm} BPM, ${r.meter}. ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} long, ${scores.length} phrases.` : '',
+      r ? `Instruments Drex chose: ${r.palette.join(', ')}.` : '',
+      pl ? `Sections: ${pl.sections.map((x) => x.part ?? x.role).join(', ')}. The climax is phrase ${pl.climaxPhrase + 1}${pl.climaxArrival ? `, arriving as "${pl.climaxArrival.replace(/_/g, ' ')}"` : ''}.` : '',
+      `Drex answered ${session.gw.calls} sets of questions to compose it${session.gw.standin ? ' (offline stand-in, not live Drex)' : ''}.`,
+    ].filter(Boolean).join(' ');
+    c.status = 'done';
+  }).catch((err: unknown) => { c.status = 'error'; c.error = err instanceof Error ? err.message : String(err); });
+  res.status(202).json(view(c));
+});
+app.get('/api/commissions/:id', (req, res) => {
+  const c = commissions.get(req.params.id);
+  if (!c) { res.status(404).json({ error: 'No such commission.' }); return; }
+  res.json(view(c));
+});
+app.get('/api/commissions/:id/piece.mid', (req, res) => {
+  const file = join(RESULTS, req.params.id, 'piece.mid');
+  if (!RUN_NAME.test(req.params.id) || !commissions.has(req.params.id) || !existsSync(file)) { res.status(404).json({ error: 'No such piece.' }); return; }
+  res.type('audio/midi').send(readFileSync(file));
+});
+
+// Theory sources, for the panel that shows what Drex was given. `/api/theory` lists the four books
+// and the rules each kind of decision receives; `/api/books/<slug>` serves a book's scan.
+const BOOKS = join(ROOT, 'context-pack/books');
+const NDI = join(ROOT, 'context-pack/ndi');
+interface BookSource { slug: string; title: string; author: string; year: number; sourceUrl?: string; files?: Record<string, string> }
+function readJsonFile<T>(path: string): T | null {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+function bookSources(): BookSource[] {
+  return readJsonFile<{ books: BookSource[] }>(join(BOOKS, 'sources.json'))?.books ?? [];
+}
+/** The file a reader should open: the scan PDF when there is one, else the HTML transcription. */
+function bookFile(b: BookSource): string | null {
+  const names = Object.keys(b.files ?? {});
+  const name = names.find((n) => n.endsWith('.pdf')) ?? names.find((n) => n.endsWith('.html'));
+  return name && existsSync(join(BOOKS, b.slug, name)) ? name : null;
+}
+/** Printed page -> page of the scan PDF, from the chapter table. Null when the book has no scan. */
+function pdfPage(slug: string, printed: number): number | null {
+  const chapters = readJsonFile<{ chapters: { start_page: number; end_page: number; pdf_start_page: number | null }[] }>(join(NDI, slug, 'chapters.json'))?.chapters ?? [];
+  const ch = chapters.find((c) => printed >= c.start_page && printed <= c.end_page && c.pdf_start_page !== null);
+  return ch ? ch.pdf_start_page! + (printed - ch.start_page) : null;
+}
+app.get('/api/theory', (req, res) => {
+  const style = pack.sheets.find((s) => s.id === req.query.style)?.id;
+  const books = bookSources().map((b) => {
+    const file = bookFile(b);
+    // What NDI has really produced for this book: only a completed extract counts.
+    const extract = readJsonFile<{ producedBy?: string; rules?: unknown[] }>(join(NDI, b.slug, 'rules.json'));
+    const state = readJsonFile<{ parseJobId?: string; classify?: Record<string, unknown> }>(join(NDI, b.slug, 'state.json'));
+    const ndi = extract?.producedBy === 'ndi-extract' && state?.parseJobId
+      ? { parsed: true, chapters: Object.keys(state.classify ?? {}).length, rules: extract.rules?.length ?? 0 }
+      : null;
+    return {
+      slug: b.slug, title: b.title.split(/[:,]/)[0], author: b.author, year: b.year,
+      url: file ? `/api/books/${b.slug}` : b.sourceUrl ?? null, pdf: !!file?.endsWith('.pdf'),
+      rulesInPack: pack.rules.filter((r) => r.source?.book === b.slug).length, ndi,
+    };
+  });
+  const slices: Record<string, { text: string; book: string | null; ref: string | null; page: number | null }[]> = {};
+  for (const type of pack.sliceTypes()) {
+    slices[type] = pack.slice(type, style).map((r) => {
+      const printed = Number(/p\.\s*(\d+)/.exec(r.source?.ref ?? '')?.[1]);
+      return {
+        text: r.text, book: r.source?.book ?? null, ref: r.source?.ref ?? null,
+        page: r.source && Number.isFinite(printed) ? pdfPage(r.source.book, printed) : null,
+      };
+    });
+  }
+  res.json({ books, slices });
+});
+app.get('/api/books/:slug', (req, res) => {
+  const book = bookSources().find((b) => b.slug === req.params.slug);
+  const file = book && bookFile(book);
+  if (!book || !file) {
+    res.status(404).json({ error: 'No such book' });
+    return;
+  }
+  // Inline, so the browser's PDF viewer opens it and honours #page=N.
+  res.sendFile(join(BOOKS, book.slug, file), { headers: { 'Content-Disposition': 'inline' } });
 });
 
 const dist = join(ROOT, 'dist');
