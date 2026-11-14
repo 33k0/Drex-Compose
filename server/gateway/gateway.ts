@@ -167,10 +167,20 @@ class Limiter {
 }
 
 /** Nace documents two hosts for the same API: console.nace.ai (the default) and drex.nace.ai. DREX_API_URL picks one. */
-export const apiUrl = (): string => (process.env.DREX_API_URL ?? '').trim() || 'https://console.nace.ai/v1/systemone';
+const HOSTS = ['https://console.nace.ai/v1/systemone', 'https://drex.nace.ai/v1/systemone'];
+let hostIndex = 0;
+export const apiUrl = (): string => (process.env.DREX_API_URL ?? '').trim().replace(/^["']|["']$/g, '') || HOSTS[hostIndex];
+/** console.nace.ai sometimes answers with a security-check page (HTTP 403, not JSON) instead of the API. Then the other host is used. */
+function switchHost(): boolean {
+  if ((process.env.DREX_API_URL ?? '').trim() || hostIndex >= HOSTS.length - 1) return false;
+  hostIndex += 1;
+  console.warn(`[drex] ${HOSTS[hostIndex - 1]} answered with a non-API 403; using ${HOSTS[hostIndex]}`);
+  return true;
+}
 
 export function apiKey(): string | null {
-  const k = (process.env.NACE_API_KEY ?? '').trim();
+  // Tolerate a key pasted with quotes or spaces around it.
+  const k = (process.env.NACE_API_KEY ?? '').trim().replace(/^["']|["']$/g, '').trim();
   return k.startsWith('nace_sk_') ? k : null;
 }
 
@@ -413,6 +423,8 @@ export class Gateway {
       } catch {
         /* non-JSON platform error */
       }
+      // A 403 that is not the API's own JSON is the host's security page: try the other host, without using up an attempt.
+      if (res.status === 403 && !detail?.error && switchHost()) { attempt--; continue; }
       const kind = detail?.error?.type ?? `http_${res.status}`;
       const issues = (detail?.error?.issues ?? []).map((i: any) => `${i.path}: ${i.message}`).join('; ');
       const message = `${detail?.error?.message ?? res.statusText}${issues ? ` (${issues})` : ''}`;

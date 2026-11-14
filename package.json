@@ -9,7 +9,7 @@
     "server": "tsx watch --env-file-if-exists=.env server/index.ts",
     "web": "vite",
     "build": "vite build",
-    "build:api": "esbuild server/vercel.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/compose.js",
+    "build:api": "esbuild server/vercel.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/compose.js && esbuild server/vercel-health.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/health.js",
     "build:vercel": "VITE_HOSTED=1 vite build && cp -R assets dist/assets && cp -R replays dist/replays",
     "start": "tsx --env-file-if-exists=.env server/index.ts",
     "typecheck": "tsc --noEmit",

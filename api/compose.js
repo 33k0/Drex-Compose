@@ -4794,9 +4794,17 @@ var Limiter = class {
     return this.stamps.filter((t) => now - t < 6e4).length;
   }
 };
-var apiUrl = () => (process.env.DREX_API_URL ?? "").trim() || "https://console.nace.ai/v1/systemone";
+var HOSTS = ["https://console.nace.ai/v1/systemone", "https://drex.nace.ai/v1/systemone"];
+var hostIndex = 0;
+var apiUrl = () => (process.env.DREX_API_URL ?? "").trim().replace(/^["']|["']$/g, "") || HOSTS[hostIndex];
+function switchHost() {
+  if ((process.env.DREX_API_URL ?? "").trim() || hostIndex >= HOSTS.length - 1) return false;
+  hostIndex += 1;
+  console.warn(`[drex] ${HOSTS[hostIndex - 1]} answered with a non-API 403; using ${HOSTS[hostIndex]}`);
+  return true;
+}
 function apiKey() {
-  const k = (process.env.NACE_API_KEY ?? "").trim();
+  const k = (process.env.NACE_API_KEY ?? "").trim().replace(/^["']|["']$/g, "").trim();
   return k.startsWith("nace_sk_") ? k : null;
 }
 function tier() {
@@ -5003,6 +5011,10 @@ var Gateway = class {
       try {
         detail = await res.json();
       } catch {
+      }
+      if (res.status === 403 && !detail?.error && switchHost()) {
+        attempt--;
+        continue;
       }
       const kind = detail?.error?.type ?? `http_${res.status}`;
       const issues = (detail?.error?.issues ?? []).map((i) => `${i.path}: ${i.message}`).join("; ");
