@@ -1,0 +1,224 @@
+/* ── Beat ── */
+
+.tempo { flex: none; }
+.tempo .panel__meta b { font-weight: 600; color: var(--ink); }
+
+/* How the beat was found: body tracking (accent) or the pixel-motion fallback (copper). */
+.beat__method {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  padding: 0 var(--pad) 0.5rem;
+  font-size: 0.86rem;
+  color: var(--ink-2);
+  animation: rise-in 420ms var(--ease-out) both;
+}
+
+.beat__method b { font-weight: 600; color: var(--ink); }
+.beat__pixels { max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.02em; }
+.beat__people { white-space: nowrap; }
+
+.beat__conf { display: inline-flex; align-items: center; gap: 0.45rem; margin-left: auto; white-space: nowrap; }
+
+.beat__meter {
+  display: block;
+  width: 4.2rem;
+  height: 0.42rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 1px;
+}
+
+.beat__meter span {
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  background: var(--accent);
+  animation: bar-settle 820ms cubic-bezier(0.3, 1.45, 0.5, 1) both;
+}
+
+.tempo__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+  padding: 0 var(--pad) 0.5rem;
+  animation: rise-in 500ms var(--ease-out) both;
+}
+
+.tempo__bpm { font-size: 2.4rem; font-weight: 600; line-height: 1; color: var(--accent); }
+.tempo__unit { font-size: 0.95rem; color: var(--ink-2); }
+.tempo__who { margin-left: auto; font-size: 0.86rem; color: var(--ink-2); text-align: right; }
+
+/* A tapped tempo overrode Drex: said plainly, in the stand-in / override colour. */
+.tempo__override {
+  margin-left: auto;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--reject-line);
+  border-radius: var(--radius);
+  background: var(--reject-soft);
+  font-size: 0.95rem;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.tempo__override b { font-weight: 600; color: var(--reject); }
+.tempo:has(.tempo__override) .tempo__bpm { color: var(--reject); }
+
+/* No beat to anchor on: the copper warning line. */
+.beat__warn {
+  margin: 0 var(--pad) 0.55rem;
+  padding: 0.3rem 0.6rem;
+  border-left: 3px solid var(--reject);
+  background: var(--reject-soft);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--reject);
+  animation: rise-in 400ms var(--ease-out) both;
+}
+
+.beat__warn kbd {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 0 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.tempo:has(.beat__warn) .tempo__bpm { color: var(--reject); }
+
+.cands { display: grid; gap: 0.15rem; padding: 0 var(--pad) 0.5rem; }
+
+.cands__head, .cand {
+  display: grid;
+  grid-template-columns: 2.6rem 5.4rem minmax(0, 1fr) minmax(0, 1.15fr) 3rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cands__head {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.cand { min-height: 1.5rem; color: var(--ink-2); animation: rise-in 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.cand__bpm { font-size: 1.1rem; text-align: right; }
+.cand__rel { font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.cand__p, .cand__agree {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.cand__p .mono, .cand__agree .mono { text-align: right; }
+
+.cand__track, .cand__agree-track { display: block; border-left: 1px solid var(--rule-strong); }
+.cand__track { height: 0.7rem; }
+.cand__agree-track { height: 0.3rem; }
+
+.cand__fill, .cand__agree-track span {
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  background: rgba(243, 238, 227, 0.36);
+  animation: bar-settle 820ms cubic-bezier(0.3, 1.45, 0.5, 1) both;
+}
+
+.cand__agree-track span { background: rgba(243, 238, 227, 0.5); }
+
+.cand__src {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cand__src.is-pixels { color: var(--reject); }
+
+.cand.is-picked { color: var(--ink); }
+.cand.is-picked .cand__bpm { font-weight: 700; color: var(--accent); }
+.cand.is-picked .cand__fill { background: var(--accent); }
+.cand.is-picked .cand__src.is-body { color: var(--accent); }
+
+.beat__grid {
+  padding: 0 var(--pad) 0.65rem;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.beat__grid b { font-weight: 600; color: var(--ink); }
+
+/* ── Sections of the clip ── */
+
+.secs { flex: 1 1 0; }
+
+.secs__list {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  padding: 0 var(--pad) 0.7rem;
+}
+
+.sec {
+  display: grid;
+  grid-template-columns: 5.4rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  animation: rise-in 420ms var(--ease-out) both;
+}
+
+.sec__frame { width: 100%; }
+.sec__body { display: grid; gap: 0.12rem; min-width: 0; }
+
+.sec__line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.sec__time { font-size: 0.82rem; color: var(--ink-2); }
+.sec__role { font-size: 1.22rem; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; }
+.sec__role--pending { color: var(--ink-2); }
+.sec__tension { font-family: var(--font-mono); font-style: normal; font-size: 0.78rem; color: var(--ink-2); }
+
+.sec__fit {
+  margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  animation: fade-in 400ms var(--ease-out) both;
+}
+
+.sec__fit--crash, .sec__fit--drop_bar { border-color: var(--rule-strong); color: var(--ink); }
+.sec__fit--none { border-color: var(--rule); color: var(--ink-3); }
+
+.sec__text {
+  font-size: 0.84rem;
+  line-height: 1.25;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

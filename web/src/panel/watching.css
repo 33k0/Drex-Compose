@@ -1,0 +1,227 @@
+/* ── Drex is watching: eight image slots and the answers ── */
+
+.watch .panel__meta b { font-weight: 600; color: var(--ink); }
+
+.watch__standin {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 var(--pad) 0.5rem;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.watch__wait {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: var(--pad) calc(var(--pad) * 1.4);
+  color: var(--ink-2);
+}
+
+.watch__wait strong { font-size: 2rem; font-weight: 500; color: var(--ink); }
+.watch__wait b { font-weight: 600; color: var(--ink); }
+
+/* Body tracking runs before the readings: frame N of M. */
+.watch__track { display: block; width: min(100%, 34rem); height: 0.35rem; margin: 0.3rem 0 0.1rem; border-left: 1px solid var(--rule-strong); background: rgba(243, 238, 227, 0.06); }
+
+.watch__track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 300ms var(--ease-out);
+}
+
+.watch__note { font-size: 0.86rem; color: var(--ink-3); }
+
+/* The beat, found while the readings are still coming in: the end of the count line. */
+.watch__beat {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  margin-left: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  animation: rise-in 420ms var(--ease-out) both;
+}
+
+.watch__beat > span:not(.tag) { overflow: hidden; text-overflow: ellipsis; }
+.watch__beat b { font-size: 1rem; font-weight: 600; color: var(--ink); }
+.watch__beat .tag { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
+.watch__beat-warn { font-weight: 600; color: var(--reject); }
+
+.watch__slots {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 0.74fr);
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 64rem;
+  padding: 0.1rem var(--pad) 0;
+}
+
+.watch__now { animation: rise-in 360ms var(--ease-out) both; }
+.watch__now:nth-child(2) { animation-delay: 30ms; }
+.watch__now:nth-child(3) { animation-delay: 60ms; }
+.watch__now:nth-child(4) { animation-delay: 90ms; }
+.watch__now:nth-child(5) { animation-delay: 120ms; }
+.watch__now:nth-child(6) { animation-delay: 150ms; }
+
+/* Images 7 and 8: reference only, so set back. */
+.watch__refs {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  display: grid;
+  align-content: center;
+  gap: 0.45rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--rule);
+}
+
+.watch__ref { opacity: 0.62; }
+
+.watch__ref-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: var(--ar, 1.7778);
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.watch__answers {
+  flex: none;
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem var(--pad) 0;
+}
+
+.watch__boundary { font-size: 0.95rem; color: var(--ink-2); }
+.watch__boundary b { font-weight: 600; color: var(--ink); }
+.watch__boundary.is-likely, .watch__boundary.is-likely b { color: var(--accent); }
+
+.watch__count {
+  margin-top: auto;
+  flex: none;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem var(--pad) 0.8rem;
+  font-size: 0.95rem;
+  color: var(--ink-2);
+}
+
+.watch__count b { font-size: 1.3rem; font-weight: 600; color: var(--ink); }
+
+.watch__bar { display: block; height: 0.3rem; border-left: 1px solid var(--rule-strong); }
+
+.watch__bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 300ms var(--ease-out);
+}
+
+/* ── Contact sheet ── */
+
+.sheet .panel__head { align-items: center; }
+.sheet .panel__meta b { font-weight: 600; color: var(--ink); }
+
+.sheet__legend {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1.3rem;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.sheet__legend li { display: inline-flex; align-items: center; gap: 0.45rem; white-space: nowrap; }
+.lg-move { width: 1.4rem; height: 0.3rem; background: linear-gradient(90deg, var(--accent) 60%, rgba(243, 238, 227, 0.15) 60%); }
+.lg-cut { width: 0; height: 0.95rem; border-left: 2px solid var(--ink); }
+.lg-bound { width: 0; height: 0.95rem; border-left: 3px solid var(--accent); }
+
+.sheet__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 23), minmax(0, 1fr));
+  gap: 3px;
+  padding: 0.15rem var(--pad) 0.75rem;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: var(--ar, 1.7778);
+  min-width: 0;
+  border-radius: 2px;
+  background: rgba(243, 238, 227, 0.035);
+}
+
+.cell__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  color: var(--ink-3);
+  opacity: 0.6;
+}
+
+.cell__frame { position: absolute; inset: 0; aspect-ratio: auto; animation: fade-in 400ms var(--ease-out) both; }
+.cell__frame .frame__time { font-size: 0.6rem; }
+
+/* Movement: a tint over the frame and a bar along the bottom, both scaled to 1..7. */
+.cell.is-read::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: calc((var(--m, 1) - 1) * 0.045);
+  pointer-events: none;
+}
+
+.cell__move {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: calc(var(--m, 1) / 7 * 100%);
+  background: var(--accent);
+  z-index: 1;
+}
+
+.cell.is-cut::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--ink);
+  z-index: 2;
+}
+
+.cell.is-boundary::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -5px;
+  bottom: -2px;
+  width: 3px;
+  background: var(--accent);
+  z-index: 2;
+}
+
+.cell.is-shown { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 3; }
