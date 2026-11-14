@@ -81,23 +81,31 @@ Setup: style sheet, the groove family of a beat-driven piece (house, boom-bap, t
 tempo, meter, key centre, mode, harmonic language, palette (a yes/no per instrument, asked as a pool
 to draw on), sound world, length (2:30 to 3:30), form, key-change plan, ending. Plan: each section's
 role, tension (1 to 7) and whether it leaves the theme, the climax position, how the climax arrives
-(a swell, a hit, a held breath then a wall of sound, the wall with the tempo broadening, or in
-beat-driven pieces the drop), what the melody is at the climax (the theme back whole, the theme at
+(a swell, a hit, a held breath then a still bright clearing that is only a little louder, a held
+breath then a wall of sound, the wall with the tempo broadening, or in beat-driven pieces the drop), what the melody is at the climax (the theme back whole, the theme at
 half speed, or development carrying on), whether the theme is stated twice at the start, and whether
-the piece needs a counter-theme and a contrast theme; tension is revised by Drex at every section end. Theme: length, contour,
+the piece needs a counter-theme and a contrast theme; tension is revised by Drex at every section end. A beat-driven piece is planned as a song: Drex picks one song form (verse and chorus; verse,
+pre-chorus, chorus; hook first; one groove), the chorus is composed once and comes back with the same
+melody and chords, and only its orchestration is decided anew each time. Theme: how many bars it fills (one to three), note count, contour,
 rhythm cell, start and end degrees, where the one leap sits, then each note in turn; six drafts and
-a judge. Every phrase: material and transformations for each half, counter-melody, seven texture
+a judge. Every phrase: its length (two to six bars; loop music stays at four), material and transformations for each half, counter-melody, seven texture
 transformations, harmonic rhythm, ending, modulation; every chord and bass move; every inner voice
 at every chord change; the verdict; then about sixty orchestration and mix answers: how full the
 texture is and which layers play, the melody's instrument and register (each option states how far it
 starts from where the last phrase ended and how its top note compares with the highest so far), a
 second instrument doubling the melody, how the texture moves inside the phrase (late entries,
-drop-outs, a bare last bar), how the phrase closes (run on, a breath, a silence), how the dynamic
+drop-outs, a bare last bar), how the phrase closes (run on, a breath, a silence), how the melody begins (on the downbeat, with a
+pickup before the bar line, or a beat late), whether instruments change over cleanly or dovetailed
+(new ones steal in a bar early, old ones linger a bar), how the dynamic
 moves inside it (steady, crescendo, diminuendo, swell), patterns, bass rhythm, accents, a pause
 before a hit, six effect amounts, chorus, sidechain.
 
 Code gives Drex facts with those questions and never a verdict: which instruments have played
-without a break and which are resting, the fullest phrase so far, the level the last phrase ended at.
+without a break and which are resting, the fullest phrase so far, the level the last phrase ended at,
+the lengths of the last phrases and how they began, and what the fullest chorus so far used.
+
+A phrase can begin before its own bar line, and those notes are written into the end of the phrase
+before it. So the server sends each phrase only once the next one has been composed.
 
 ## Evaluation (`npm run eval`)
 
@@ -158,6 +166,24 @@ rules on grooves, hooks, bass, arrangement and production for pop, hip-hop, trap
 They are hand-written from general knowledge (marked `own`), not parsed from a source, and are sent
 only when the piece uses the beat-driven sheet. In that style a looped motif is right, so the phrase
 judge is told not to reject repeats.
+
+## Running it on Vercel
+
+The app deploys as a static site plus one function:
+
+- **Saved pieces** in `replays/` are served as files, so `/?replay=night-swimming` plays with no server.
+- **Composing** runs in `api/compose.js`: one request composes one piece (about a minute) and streams
+  every Drex decision back to the page. It is the bundle of `server/vercel.ts`; after changing server
+  code run `npm run build:api` and commit the result.
+
+To deploy: import the repository in Vercel (the settings come from `vercel.json`), then add the
+environment variables `NACE_API_KEY`, `DREX_MODEL=drex-max-v1.1`, `DREX_TIER=paid` and
+`DREX_API_URL=https://drex.nace.ai/v1/systemone`. Without a key the function answers with the offline
+stand-in. Anyone who opens the site can compose, and each piece costs Drex credit.
+
+Differences from running locally: the function cannot hear the browser's playhead, so a piece is
+composed straight through instead of a few phrases ahead of playback, and the theory panel's book
+viewer is not available.
 
 ## Credits
 
