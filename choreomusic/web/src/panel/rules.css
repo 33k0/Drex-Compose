@@ -1,0 +1,116 @@
+.rules {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  min-height: 4.7rem;
+  padding: 0.6rem 0.4rem 0.6rem var(--pad);
+}
+
+.rules > * {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0 0.85rem;
+  animation: rise-in 650ms var(--ease-out) both;
+}
+
+/* Fields arrive left to right, the way a score header is read. */
+.rules > :nth-child(1) { padding-left: 0; }
+.rules > :nth-child(2) { animation-delay: 50ms; }
+.rules > :nth-child(3) { animation-delay: 100ms; }
+.rules > :nth-child(4) { animation-delay: 150ms; }
+.rules > :nth-child(5) { animation-delay: 200ms; }
+.rules > :nth-child(6) { animation-delay: 250ms; }
+.rules > :nth-child(7) { animation-delay: 300ms; }
+.rules > :nth-child(8) { animation-delay: 350ms; }
+.rules > :nth-child(9) { animation-delay: 400ms; }
+.rules > :nth-child(10) { animation-delay: 450ms; }
+.rules > :nth-child(11) { animation-delay: 500ms; }
+
+.rules__field + .rules__field { border-left: 1px solid var(--rule); }
+
+.rules__label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.rules__value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 1.08rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.rules__lead { flex: 0 1 auto; }
+
+.rules__style {
+  font-size: 1.9rem;
+  font-weight: 500;
+  line-height: 1.12;
+  padding-bottom: 0.12rem;
+  white-space: nowrap;
+}
+
+/* Beat-driven pieces carry a groove family: on the label line, so the strip gets no wider. */
+.rules__groove { color: var(--accent); }
+
+/* Time signature, stacked as it is engraved. */
+.rules__sig { flex: none; padding: 0 0.6rem 0 0.2rem; }
+
+.rules__meter {
+  display: grid;
+  justify-items: center;
+  font-family: var(--font-score);
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 0.82;
+}
+
+.rules__meter b { font-weight: inherit; }
+
+.rules__big { font-size: 1.55rem; font-weight: 600; line-height: 1; }
+.rules__unit { font-size: 0.92rem; color: var(--ink-2); white-space: nowrap; }
+.rules__unit.score-text { font-size: 1.2rem; color: var(--ink); }
+
+.rules__palette { flex: 1 1 12rem; }
+
+.rules__palette .rules__value {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.98rem;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.rules--empty {
+  align-items: center;
+  gap: 1.4rem;
+  padding: 0.6rem var(--pad);
+}
+
+.rules--empty > * { padding: 0; flex-direction: row; }
+.rules__waiting { font-size: 1.5rem; color: var(--ink-2); }
+
+.rules__ghost {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--rule-strong), transparent);
+  animation: ghost-sweep 1.8s var(--ease-in-out) infinite alternate;
+  transform-origin: left;
+}
+
+@keyframes ghost-sweep {
+  from { transform: scaleX(0.2); opacity: 0.4; }
+  to { transform: scaleX(1); opacity: 1; }
+}

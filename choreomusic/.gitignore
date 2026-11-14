@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.cache
+*.log
+clips/*.mp4
+clips/*.webm
+clips/*.mov
+eval/results
+eval/listening
