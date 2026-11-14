@@ -56,7 +56,13 @@
         ]
       ],
       "first_paragraph": 1,
-      "last_paragraph": 9
+      "last_paragraph": 9,
+      "topics": [
+        {
+          "topic": "melody",
+          "confidence": 0.9388266098962438
+        }
+      ]
     },
     {
       "id": "ch-02",
@@ -85,7 +91,13 @@
         ]
       ],
       "first_paragraph": 10,
-      "last_paragraph": 13
+      "last_paragraph": 13,
+      "topics": [
+        {
+          "topic": "melody",
+          "confidence": 0.9408354168212476
+        }
+      ]
     },
     {
       "id": "ch-03",
@@ -154,7 +166,13 @@
         ]
       ],
       "first_paragraph": 14,
-      "last_paragraph": 30
+      "last_paragraph": 30,
+      "topics": [
+        {
+          "topic": "melody",
+          "confidence": 0.6529069494180746
+        }
+      ]
     },
     {
       "id": "ch-04",
@@ -207,7 +225,8 @@
         ]
       ],
       "first_paragraph": 31,
-      "last_paragraph": 39
+      "last_paragraph": 39,
+      "topics": []
     },
     {
       "id": "ch-05",
@@ -248,7 +267,8 @@
         ]
       ],
       "first_paragraph": 40,
-      "last_paragraph": 45
+      "last_paragraph": 45,
+      "topics": []
     },
     {
       "id": "ch-06",
@@ -281,7 +301,8 @@
         ]
       ],
       "first_paragraph": 46,
-      "last_paragraph": 49
+      "last_paragraph": 49,
+      "topics": []
     },
     {
       "id": "ch-07",
@@ -314,7 +335,8 @@
         ]
       ],
       "first_paragraph": 50,
-      "last_paragraph": 53
+      "last_paragraph": 53,
+      "topics": []
     },
     {
       "id": "ch-08",
@@ -339,7 +361,8 @@
         ]
       ],
       "first_paragraph": 54,
-      "last_paragraph": 55
+      "last_paragraph": 55,
+      "topics": []
     },
     {
       "id": "ch-09",
@@ -364,7 +387,8 @@
         ]
       ],
       "first_paragraph": 57,
-      "last_paragraph": 58
+      "last_paragraph": 58,
+      "topics": []
     },
     {
       "id": "ch-10",
@@ -405,7 +429,8 @@
         ]
       ],
       "first_paragraph": 59,
-      "last_paragraph": 65
+      "last_paragraph": 65,
+      "topics": []
     },
     {
       "id": "ch-11",
@@ -442,7 +467,8 @@
         ]
       ],
       "first_paragraph": 66,
-      "last_paragraph": 70
+      "last_paragraph": 70,
+      "topics": []
     },
     {
       "id": "ch-12",
@@ -467,7 +493,8 @@
         ]
       ],
       "first_paragraph": 71,
-      "last_paragraph": 73
+      "last_paragraph": 73,
+      "topics": []
     },
     {
       "id": "ch-13",
@@ -496,7 +523,8 @@
         ]
       ],
       "first_paragraph": 75,
-      "last_paragraph": 77
+      "last_paragraph": 77,
+      "topics": []
     },
     {
       "id": "ch-14",
@@ -525,7 +553,8 @@
         ]
       ],
       "first_paragraph": 78,
-      "last_paragraph": 80
+      "last_paragraph": 80,
+      "topics": []
     },
     {
       "id": "ch-15",
@@ -574,7 +603,8 @@
         ]
       ],
       "first_paragraph": 81,
-      "last_paragraph": 88
+      "last_paragraph": 88,
+      "topics": []
     },
     {
       "id": "ch-16",
@@ -595,7 +625,8 @@
         ]
       ],
       "first_paragraph": 89,
-      "last_paragraph": 89
+      "last_paragraph": 89,
+      "topics": []
     },
     {
       "id": "ch-17",
@@ -616,7 +647,8 @@
         ]
       ],
       "first_paragraph": 90,
-      "last_paragraph": 90
+      "last_paragraph": 90,
+      "topics": []
     },
     {
       "id": "ch-18",
@@ -637,7 +669,8 @@
         ]
       ],
       "first_paragraph": 91,
-      "last_paragraph": 91
+      "last_paragraph": 91,
+      "topics": []
     },
     {
       "id": "ch-19",
@@ -666,7 +699,8 @@
         ]
       ],
       "first_paragraph": 92,
-      "last_paragraph": 94
+      "last_paragraph": 94,
+      "topics": []
     },
     {
       "id": "ch-20",
@@ -687,7 +721,8 @@
         ]
       ],
       "first_paragraph": 95,
-      "last_paragraph": 95
+      "last_paragraph": 95,
+      "topics": []
     },
     {
       "id": "ch-21",
@@ -708,7 +743,8 @@
         ]
       ],
       "first_paragraph": 96,
-      "last_paragraph": 96
+      "last_paragraph": 96,
+      "topics": []
     },
     {
       "id": "ch-22",
@@ -737,7 +773,8 @@
         ]
       ],
       "first_paragraph": 97,
-      "last_paragraph": 99
+      "last_paragraph": 99,
+      "topics": []
     },
     {
       "id": "ch-23",
@@ -758,7 +795,8 @@
         ]
       ],
       "first_paragraph": 102,
-      "last_paragraph": 102
+      "last_paragraph": 102,
+      "topics": []
     },
     {
       "id": "ch-24",
@@ -779,7 +817,8 @@
         ]
       ],
       "first_paragraph": 103,
-      "last_paragraph": 103
+      "last_paragraph": 103,
+      "topics": []
     },
     {
       "id": "ch-25",
@@ -800,7 +839,8 @@
         ]
       ],
       "first_paragraph": 104,
-      "last_paragraph": 104
+      "last_paragraph": 104,
+      "topics": []
     },
     {
       "id": "ch-26",
@@ -833,7 +873,8 @@
         ]
       ],
       "first_paragraph": 106,
-      "last_paragraph": 109
+      "last_paragraph": 109,
+      "topics": []
     },
     {
       "id": "ch-27",
@@ -858,7 +899,8 @@
         ]
       ],
       "first_paragraph": 111,
-      "last_paragraph": 112
+      "last_paragraph": 112,
+      "topics": []
     },
     {
       "id": "ch-28",
@@ -879,7 +921,8 @@
         ]
       ],
       "first_paragraph": 114,
-      "last_paragraph": 114
+      "last_paragraph": 114,
+      "topics": []
     },
     {
       "id": "ch-29",
@@ -900,7 +943,8 @@
         ]
       ],
       "first_paragraph": 115,
-      "last_paragraph": 115
+      "last_paragraph": 115,
+      "topics": []
     },
     {
       "id": "ch-30",
@@ -929,7 +973,8 @@
         ]
       ],
       "first_paragraph": 116,
-      "last_paragraph": 118
+      "last_paragraph": 118,
+      "topics": []
     },
     {
       "id": "ch-31",
@@ -954,7 +999,8 @@
         ]
       ],
       "first_paragraph": 119,
-      "last_paragraph": 120
+      "last_paragraph": 120,
+      "topics": []
     },
     {
       "id": "ch-32",
@@ -983,7 +1029,8 @@
         ]
       ],
       "first_paragraph": 121,
-      "last_paragraph": 123
+      "last_paragraph": 123,
+      "topics": []
     },
     {
       "id": "ch-33",
@@ -999,7 +1046,8 @@
       "heading_found": true,
       "paragraph_pages": [],
       "first_paragraph": null,
-      "last_paragraph": null
+      "last_paragraph": null,
+      "topics": []
     },
     {
       "id": "ch-34",
@@ -1040,7 +1088,8 @@
         ]
       ],
       "first_paragraph": 125,
-      "last_paragraph": 130
+      "last_paragraph": 130,
+      "topics": []
     }
   ]
 }

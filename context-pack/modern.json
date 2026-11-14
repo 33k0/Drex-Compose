@@ -5,7 +5,7 @@
     {
       "id": "modern.groove.tempo-by-family",
       "topic": "groove",
-      "text": "Match the tempo to the groove: boom-bap 82 to 96 BPM, funk 95 to 115, pop 96 to 124, house 118 to 128, trap 130 to 150 felt in half time.",
+      "text": "Match the tempo to the groove: lo-fi 70 to 90 BPM, boom-bap 82 to 96, funk 95 to 115, house 118 to 128, trap 130 to 150 felt in half time.",
       "source": null,
       "own": true,
       "styles": [
@@ -540,6 +540,88 @@
       ],
       "calls": [
         "hold"
+      ]
+    },
+    {
+      "id": "modern.arrangement.chorus-is-the-peak",
+      "topic": "arrangement",
+      "text": "The chorus is the fullest section: every layer in, the hook on top, the widest and brightest mix. Keep verses leaner so the chorus has somewhere to go.",
+      "source": null,
+      "own": true,
+      "styles": [
+        "beat_driven"
+      ],
+      "calls": [
+        "plan",
+        "orchestration"
+      ]
+    },
+    {
+      "id": "modern.arrangement.last-chorus-biggest",
+      "topic": "arrangement",
+      "text": "Each chorus should top the one before: add a layer, a doubling or an octave. The last chorus is the biggest moment of the song.",
+      "source": null,
+      "own": true,
+      "styles": [
+        "beat_driven"
+      ],
+      "calls": [
+        "plan",
+        "orchestration"
+      ]
+    },
+    {
+      "id": "modern.arrangement.strip-before-chorus",
+      "topic": "arrangement",
+      "text": "Set up a chorus or a drop by taking something away just before it: drop the drums or bass for the last bar, so their return is felt.",
+      "source": null,
+      "own": true,
+      "styles": [
+        "beat_driven"
+      ],
+      "calls": [
+        "orchestration"
+      ]
+    },
+    {
+      "id": "modern.arrangement.bridge-contrast",
+      "topic": "arrangement",
+      "text": "A bridge or breakdown gives the ear something else: thin the beat, change the chords or the melody, so the last chorus lands fresh.",
+      "source": null,
+      "own": true,
+      "styles": [
+        "beat_driven"
+      ],
+      "calls": [
+        "plan",
+        "phrase_direction"
+      ]
+    },
+    {
+      "id": "modern.arrangement.verse-lean",
+      "topic": "arrangement",
+      "text": "In a verse keep the texture lean: drums, bass and one more layer, with the hook held back or only hinted at.",
+      "source": null,
+      "own": true,
+      "styles": [
+        "beat_driven"
+      ],
+      "calls": [
+        "orchestration"
+      ]
+    },
+    {
+      "id": "modern.hook.same-every-time",
+      "topic": "hook",
+      "text": "A chorus is the same music each time it returns; by the second one the listener should be able to sing along.",
+      "source": null,
+      "own": true,
+      "styles": [
+        "beat_driven"
+      ],
+      "calls": [
+        "phrase_direction",
+        "phrase_judge"
       ]
     }
   ]

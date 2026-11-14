@@ -5,7 +5,7 @@
     {
       "id": "bittersweet_orchestral",
       "name": "Bittersweet orchestral",
-      "summary": "Slow, bittersweet film-cue writing: piano and massed strings over a rocking compound pulse, opening quietly on warm colour chords and developing without literal repeats, through planned peaks and lulls, to an overwhelming climax and a late dark turn.",
+      "summary": "Slow, bittersweet film-cue writing: piano and massed strings over a rocking compound pulse, opening quietly on warm colour chords, developing without literal repeats to one earned arrival, more often still and bright than loud, and a late dark turn.",
       "traits": [
         "slow compound pulse: 12/8 at 68-75 BPM, felt as four rocking beats",
         "minor tonal centre (for example C-sharp minor) with planned key changes",
@@ -17,8 +17,8 @@
         "constant development: every restatement varied, almost no exact repetition",
         "pedal tones held under shifting harmony",
         "phrase endings left unresolved or half-resolved to pull the line onward",
-        "a pause or sudden thinning just before the biggest entry",
-        "overwhelming full-orchestra climax late in the piece",
+        "a pause or sudden thinning just before the arrival",
+        "the arrival late in the piece is earned by steady momentum, then released: usually a gentle, serene opening-out (the pulse stops, chords are held, the theme sings high and slow); a full-orchestra wall only when the prompt asks for something vast or violent",
         "late dark turn with late-Romantic, Russian-style chromatic chords",
         "short afterglow that dissolves instead of closing firmly"
       ],
@@ -35,7 +35,7 @@
           "late chromatic chords: augmented sixth, diminished seventh, lowered second and sixth degrees",
           "suspensions and sevenths left hanging"
         ],
-        "soundWorld": "Soft-attack piano and a large, warm string section in a spacious hall; woodwind and horn as quiet colour, harp and timpani for swells, cymbal and bass drum only at the main climax.",
+        "soundWorld": "Soft-attack piano and a large, warm string section in a spacious hall; woodwind and horn as quiet colour, harp and timpani for swells, cymbal and bass drum only for a rare wall-of-sound climax.",
         "typicalInstruments": ["piano", "violins", "violins2", "violas", "celli", "basses", "solo_violin", "horn", "flute", "oboe", "clarinet", "harp", "timpani", "bass_drum", "cymbal"]
       },
       "avoid": [
@@ -46,7 +46,8 @@
         "a steady drum-kit or electronic beat",
         "fast chord changes in quiet passages",
         "a bright ending that resolves everything",
-        "every instrument doubling all the time"
+        "every instrument doubling all the time",
+        "a climax that is only louder: more noise without a change of colour, register or motion"
       ]
     },
     {
@@ -65,7 +66,8 @@
         "eight-bar blocks grouped into sixteen-bar sections",
         "breakdown that strips back to pad and motif",
         "noise risers and falls at section joins",
-        "looped two- to four-chord harmony"
+        "looped two- to four-chord harmony",
+        "a chorus that adds what the verse held back: another instrument on the hook, keys or strings filling the chords, a step up in level"
       ],
       "defaults": {
         "tempoRange": [100, 128],
@@ -77,8 +79,8 @@
           "pedal bass under changing pads",
           "modal harmony with few functional cadences"
         ],
-        "soundWorld": "Dry, punchy electronic production: 808 kick and sine sub, tight hats, pluck synth and wide pad, filtered noise for transitions.",
-        "typicalInstruments": ["kick808", "sub", "drumkit", "pluck", "pad", "noise", "piano", "vibraphone"]
+        "soundWorld": "Dry, punchy production: 808 kick or drum kit, sine sub, tight hats, pluck synth and wide pad, filtered noise for transitions. Electric piano, a synth lead on the hook, supersaw chords, a moving synth bass, bell sparkles and synth-brass stabs are the colours of the style, used above all to make a chorus bigger than a verse. No orchestral instruments.",
+        "typicalInstruments": ["kick808", "sub", "drumkit", "pluck", "pad", "noise", "piano", "keys", "lead", "supersaw", "synth_bass", "bell", "brass"]
       },
       "avoid": [
         "rubato, pauses or tempo changes inside a section",

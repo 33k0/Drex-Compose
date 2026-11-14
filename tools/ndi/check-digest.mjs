@@ -130,7 +130,7 @@ function main() {
       try {
         const ss = JSON.parse(readFileSync(ssPath, 'utf8'));
         const sheets = Array.isArray(ss) ? ss : ss.sheets;
-        const INSTR = ['piano', 'violins', 'violins2', 'violas', 'celli', 'basses', 'solo_violin', 'flute', 'oboe', 'clarinet', 'horn', 'harp', 'timpani', 'bass_drum', 'cymbal', 'drumkit', 'celesta', 'glockenspiel', 'vibraphone', 'sub', 'pad', 'pluck', 'kick808', 'noise'];
+        const INSTR = ['piano', 'violins', 'violins2', 'violas', 'celli', 'basses', 'solo_violin', 'flute', 'oboe', 'clarinet', 'horn', 'harp', 'timpani', 'bass_drum', 'cymbal', 'drumkit', 'celesta', 'glockenspiel', 'vibraphone', 'sub', 'pad', 'pluck', 'kick808', 'noise', 'keys', 'lead', 'supersaw', 'synth_bass', 'bell', 'brass'];
         for (const id of ['bittersweet_orchestral', 'beat_driven', 'playful']) if (!sheets.some((s) => s.id === id)) errors.push(`style sheet ${id} missing`);
         for (const s of sheets) {
           if (wordCount(s.summary ?? '') > 40) errors.push(`style ${s.id}: summary over 40 words`);

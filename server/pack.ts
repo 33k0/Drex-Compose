@@ -49,8 +49,8 @@ function readJson<T>(file: string, fallback: T): T {
 const FALLBACK_SHEETS: StyleSheet[] = [
   {
     id: 'bittersweet_orchestral', name: 'Bittersweet orchestral',
-    summary: 'A slow orchestral cue for piano and strings that starts delicately and builds to an overwhelming climax.',
-    traits: ['slow compound pulse (12/8 near 70 BPM)', 'minor tonal centre with key changes', 'warm two-chord opening on major-seventh and ninth chords', 'piano and strings at scale', 'quiet start to a huge climax', 'dark late turn with chromatic chords', 'planned peaks and lulls', 'constant development, little exact repetition', 'pedal tones', 'unresolved phrase endings', 'a pause before the biggest hit'],
+    summary: 'A slow orchestral cue for piano and strings that starts delicately and builds to one earned arrival, more often still and bright than loud.',
+    traits: ['slow compound pulse (12/8 near 70 BPM)', 'minor tonal centre with key changes', 'warm two-chord opening on major-seventh and ninth chords', 'piano and strings at scale', 'quiet start to one earned arrival', 'dark late turn with chromatic chords', 'planned peaks and lulls', 'constant development, little exact repetition', 'pedal tones', 'unresolved phrase endings', 'a pause before the arrival'],
   },
   {
     id: 'beat_driven', name: 'Beat-driven',
@@ -68,7 +68,7 @@ const FALLBACK_SHEETS: StyleSheet[] = [
 const SLICE: Partial<Record<CallType, { calls: string[]; topics?: string[]; max: number }>> = {
   setup: { calls: ['setup'], max: 14 },
   // Every plan-tagged rule fits: at 16 the round robin cut the peak-shaping rules (one main peak, pull back before it).
-  plan: { calls: ['plan'], max: 25 },
+  plan: { calls: ['plan'], max: 28 },
   plan_revision: { calls: ['plan'], topics: ['scoring_to_picture', 'dynamics_pacing', 'form', 'tension_release', 'departure_return'], max: 10 },
   theme_shape: { calls: ['theme_draft'], topics: ['melody', 'phrase_structure'], max: 14 },
   theme_note: { calls: ['theme_draft'], topics: ['melody'], max: 12 },
@@ -131,36 +131,48 @@ class Pack {
     return `STYLE   ${s.name}: ${s.summary}\n        traits: ${s.traits.join('; ')}${s.avoid?.length ? `\n        avoid: ${s.avoid.join('; ')}` : ''}`;
   }
 
+  /** The theory rules one call type is given, in the order they are sent. */
+  slice(callType: CallType, style?: StyleId): Rule[] {
+    const spec = SLICE[callType];
+    if (!spec || !this.rules.length) return [];
+    let rules = this.rules.filter((r) => r.calls.some((c) => spec.calls.includes(c)) && (!r.styles || (!!style && r.styles.includes(style))));
+    if (spec.topics) {
+      const order = spec.topics;
+      const rank = (r: Rule) => (r.styles ? -1 : order.indexOf(r.topic));
+      rules = rules
+        .filter((r) => !!r.styles || order.includes(r.topic))
+        .sort((a, b) => rank(a) - rank(b));
+    }
+    // Spread the budget across topics rather than taking the first N of one topic.
+    const byTopic = new Map<string, Rule[]>();
+    for (const r of rules) byTopic.set(r.topic, [...(byTopic.get(r.topic) ?? []), r]);
+    const picked: Rule[] = [];
+    for (let i = 0; picked.length < spec.max; i++) {
+      let any = false;
+      for (const list of byTopic.values()) {
+        if (list[i] && picked.length < spec.max) {
+          picked.push(list[i]);
+          any = true;
+        }
+      }
+      if (!any) break;
+    }
+    return picked;
+  }
+
+  /** Call types that are given theory rules. */
+  sliceTypes(): CallType[] {
+    return Object.keys(SLICE) as CallType[];
+  }
+
   /** The theory slice for one call type, as a text block for the state. */
   theory(callType: CallType, style?: StyleId): string {
     const cacheKey = `${callType}:${style ?? ''}`;
     const hit = this.cache.get(cacheKey);
     if (hit !== undefined) return hit;
-    const spec = SLICE[callType];
     let text = '';
-    if (spec && this.rules.length) {
-      let rules = this.rules.filter((r) => r.calls.some((c) => spec.calls.includes(c)) && (!r.styles || (!!style && r.styles.includes(style))));
-      if (spec.topics) {
-        const order = spec.topics;
-        const rank = (r: Rule) => (r.styles ? -1 : order.indexOf(r.topic));
-        rules = rules
-          .filter((r) => !!r.styles || order.includes(r.topic))
-          .sort((a, b) => rank(a) - rank(b));
-      }
-      // Spread the budget across topics rather than taking the first N of one topic.
-      const byTopic = new Map<string, Rule[]>();
-      for (const r of rules) byTopic.set(r.topic, [...(byTopic.get(r.topic) ?? []), r]);
-      const picked: Rule[] = [];
-      for (let i = 0; picked.length < spec.max; i++) {
-        let any = false;
-        for (const list of byTopic.values()) {
-          if (list[i] && picked.length < spec.max) {
-            picked.push(list[i]);
-            any = true;
-          }
-        }
-        if (!any) break;
-      }
+    {
+      const picked = this.slice(callType, style);
       if (picked.length) {
         text =
           'THEORY  (from the context pack; follow these when choosing)\n' +

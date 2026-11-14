@@ -312,7 +312,8 @@
         "ref": "§ 221, p. 102"
       },
       "calls": [
-        "plan"
+        "plan",
+        "phrase_direction"
       ]
     },
     {
@@ -1947,7 +1948,7 @@
     {
       "id": "dynamics_pacing.climax-placement",
       "topic": "dynamics_pacing",
-      "text": "Place the main climax about two-thirds to three-quarters of the way through, and make the highest melody note, the loudest dynamic and the fullest scoring arrive together there.",
+      "text": "Place the main climax about two-thirds to three-quarters of the way through, with the highest melody note there. It is the most intense moment, not necessarily the loudest or the fullest.",
       "source": null,
       "own": true,
       "calls": [
@@ -2148,6 +2149,38 @@
       "own": true,
       "calls": [
         "plan"
+      ]
+    },
+    {
+      "id": "dynamics_pacing.climax-by-stillness",
+      "topic": "dynamics_pacing",
+      "text": "A climax need not be the loudest moment. After long motion, stopping the pulse and opening into held chords under a high, slow melody can move the listener more than added volume.",
+      "source": null,
+      "own": true,
+      "calls": [
+        "plan",
+        "orchestration"
+      ]
+    },
+    {
+      "id": "orchestration.dovetail-entries",
+      "topic": "orchestration",
+      "text": "Hide the seam between phrases: let a new instrument enter softly under the end of the phrase before, and let a departing one hold over the bar line before it stops.",
+      "source": null,
+      "own": true,
+      "calls": [
+        "orchestration"
+      ]
+    },
+    {
+      "id": "phrase_structure.pickup-across-the-line",
+      "topic": "phrase_structure",
+      "text": "Do not start every phrase on its downbeat. A pickup of a few notes before the bar line, or an entry just after it, keeps phrases from sounding like separate blocks.",
+      "source": null,
+      "own": true,
+      "calls": [
+        "orchestration",
+        "phrase_direction"
       ]
     }
   ]
