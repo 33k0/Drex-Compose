@@ -1,0 +1,76 @@
+.app {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* The desk: header, rules, three working columns, the tension plan, a status line. */
+.desk {
+  position: relative;
+  z-index: var(--z-panel);
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: var(--gap);
+  padding: 0.85rem 1.25rem 0.7rem;
+}
+
+.desk__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.42fr) minmax(0, 0.98fr);
+  gap: var(--gap);
+  min-height: 0;
+}
+
+.desk__mid {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--gap);
+  min-width: 0;
+  min-height: 0;
+}
+
+.desk__mid.has-lineage { grid-template-rows: minmax(0, 1fr) auto; }
+
+/* Narrow or portrait windows (not the demo target): stack and let the page scroll. */
+@media (max-aspect-ratio: 11/10), (max-width: 900px) {
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100dvh; overflow: visible; }
+  .desk { height: auto; grid-template-rows: none; }
+  .desk__main { grid-template-columns: minmax(0, 1fr); }
+  .desk__main > *, .desk__mid > * { min-height: 22rem; }
+}
+
+/* ── Backdrop ── */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-backdrop);
+  background:
+    radial-gradient(120% 90% at 18% 0%, #1b2422 0%, rgba(11, 12, 13, 0) 60%),
+    radial-gradient(90% 80% at 100% 100%, #221a17 0%, rgba(11, 12, 13, 0) 55%),
+    var(--ground);
+  pointer-events: none;
+}
+
+.backdrop__image {
+  position: absolute;
+  inset: -2%;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1800ms var(--ease-in-out);
+}
+
+.backdrop__image.is-in { opacity: 1; }
+
+/* The scrim keeps every panel legible over any picture; it lifts very slightly with the music. */
+.backdrop__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 9, 10, 0.6) 0%, rgba(8, 9, 10, 0.3) 34%, rgba(8, 9, 10, 0.36) 62%, rgba(8, 9, 10, 0.68) 100%);
+  opacity: calc(1 - var(--lift, 0) * 0.16);
+}
