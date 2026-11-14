@@ -58,7 +58,7 @@ export const SIDECAR_URL = '/assets/samples/manifest.extra.json';
 export const IR_INDEX_URL = '/assets/ir/ir.json';
 export const IR_BASE_URL = '/assets/ir/';
 
-export const SYNTH_IDS = ['sub', 'pad', 'pluck', 'kick808', 'noise'] as const;
+export const SYNTH_IDS = ['sub', 'pad', 'pluck', 'kick808', 'noise', 'keys', 'lead', 'supersaw', 'synth_bass', 'bell', 'brass'] as const;
 export type SynthId = (typeof SYNTH_IDS)[number];
 
 export function isSynthId(id: string): id is SynthId {

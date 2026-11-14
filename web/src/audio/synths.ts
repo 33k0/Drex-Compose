@@ -6,7 +6,7 @@ import * as Tone from 'tone';
 import type { LayerRole } from '../../../shared/types.ts';
 import { dbToGain, midiToHz } from './selection.ts';
 
-export type TonalSynth = 'sub' | 'pad' | 'pluck' | 'kick808';
+export type TonalSynth = 'sub' | 'pad' | 'pluck' | 'kick808' | 'keys' | 'lead' | 'supersaw' | 'synth_bass' | 'bell' | 'brass';
 /** note = written notes; fallback = standing in for a missing sampled instrument; hold = hold chord. */
 export type Variant = 'note' | 'fallback' | 'hold';
 
@@ -15,7 +15,8 @@ const HANDOFF_SEC = 0.09;
 
 // Set against the sampled instruments by bus-meter readings (not by ear): at -8 dB the sub read ~17 dB
 // hotter than sampled basses at the same velocity, and the kick ~10 dB over the drum kit.
-const LEVEL_DB: Record<TonalSynth, number> = { sub: -18, pad: -13, pluck: -7, kick808: -9 };
+// The six production sounds below were levelled by reasoning from the pluck and pad figures, not yet by meter or ear.
+const LEVEL_DB: Record<TonalSynth, number> = { sub: -18, pad: -13, pluck: -7, kick808: -9, keys: -9, lead: -14, supersaw: -19, synth_bass: -15, bell: -11, brass: -15 };
 const NOISE_SWELL_DB = -13;
 
 interface Instance {
@@ -119,6 +120,83 @@ function makePluck(): Instance {
   return polyInstance([synth], [], LEVEL_DB.pluck);
 }
 
+// ── Production sounds for beat-driven music ──
+
+/** Electric piano: a soft FM tine with a bell-like attack that mellows as it rings. */
+function makeKeys(): Instance {
+  const synth = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 1, modulationIndex: 2.6, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+    envelope: { attack: 0.004, decay: 1.6, sustain: 0.28, release: 0.5 },
+    modulationEnvelope: { attack: 0.002, decay: 0.35, sustain: 0.12, release: 0.3 },
+  });
+  synth.maxPolyphony = 20;
+  const tremolo = new Tone.Tremolo({ frequency: 4.2, depth: 0.22, spread: 120 }).start();
+  return polyInstance([synth], [tremolo], LEVEL_DB.keys);
+}
+
+/** Synth lead: two detuned saws through a bright low-pass, with a little vibrato. */
+function makeLead(): Instance {
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'fatsawtooth', count: 2, spread: 14 },
+    envelope: { attack: 0.012, decay: 0.2, sustain: 0.75, release: 0.18 },
+  });
+  synth.maxPolyphony = 8;
+  const vibrato = new Tone.Vibrato({ frequency: 5.2, depth: 0.06 });
+  const filter = new Tone.Filter({ type: 'lowpass', frequency: 4200, rolloff: -12, Q: 1.2 });
+  return polyInstance([synth], [vibrato, filter], LEVEL_DB.lead);
+}
+
+/** Supersaw: seven detuned saws per note, wide and bright: the chord wall of a dance-pop chorus. */
+function makeSupersaw(): Instance {
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'fatsawtooth', count: 7, spread: 38 },
+    envelope: { attack: 0.03, decay: 0.4, sustain: 0.8, release: 0.45 },
+  });
+  synth.maxPolyphony = 12;
+  const filter = new Tone.Filter({ type: 'lowpass', frequency: 6500, rolloff: -12, Q: 0.5 });
+  const chorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.5, spread: 180 }).start();
+  return polyInstance([synth], [filter, chorus], LEVEL_DB.supersaw);
+}
+
+/** Synth bass: a saw with a filter that snaps shut after each attack: punch, then body. */
+function makeSynthBass(): Instance {
+  const synth = new Tone.PolySynth(Tone.MonoSynth, {
+    oscillator: { type: 'sawtooth' },
+    envelope: { attack: 0.004, decay: 0.25, sustain: 0.7, release: 0.12 },
+    filter: { type: 'lowpass', rolloff: -24, Q: 2.2 },
+    filterEnvelope: { attack: 0.002, decay: 0.16, sustain: 0.25, release: 0.15, baseFrequency: 110, octaves: 3.4 },
+  });
+  synth.maxPolyphony = 4;
+  return polyInstance([synth], [], LEVEL_DB.synth_bass);
+}
+
+/** Bell: an inharmonic FM strike with a long glassy ring. */
+function makeBell(): Instance {
+  const synth = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 3.5, modulationIndex: 9, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 1.8, sustain: 0, release: 1.2 },
+    modulationEnvelope: { attack: 0.001, decay: 0.5, sustain: 0.05, release: 0.6 },
+  });
+  synth.maxPolyphony = 16;
+  return polyInstance([synth], [], LEVEL_DB.bell);
+}
+
+/** Synth brass: saws whose filter opens with each note, the "blat" of a horn stab. */
+function makeBrass(): Instance {
+  const synth = new Tone.PolySynth(Tone.MonoSynth, {
+    oscillator: { type: 'fatsawtooth', count: 3, spread: 16 },
+    envelope: { attack: 0.03, decay: 0.2, sustain: 0.8, release: 0.16 },
+    filter: { type: 'lowpass', rolloff: -24, Q: 1 },
+    filterEnvelope: { attack: 0.05, decay: 0.3, sustain: 0.55, release: 0.2, baseFrequency: 320, octaves: 3 },
+  });
+  synth.maxPolyphony = 10;
+  return polyInstance([synth], [], LEVEL_DB.brass);
+}
+
+const MAKERS: Record<Exclude<TonalSynth, 'sub' | 'pad' | 'pluck' | 'kick808'>, () => Instance> = {
+  keys: makeKeys, lead: makeLead, supersaw: makeSupersaw, synth_bass: makeSynthBass, bell: makeBell, brass: makeBrass,
+};
+
 function makeKick(): Instance {
   const synth = new Tone.MembraneSynth({
     pitchDecay: 0.045,
@@ -181,7 +259,7 @@ export class SynthBank {
     const key = `${inst}|${layer}|${variant}`;
     let it = this.instances.get(key);
     if (!it) {
-      it = inst === 'sub' ? makeSub(variant) : inst === 'pad' ? makePad(variant) : inst === 'pluck' ? makePluck() : makeKick();
+      it = inst === 'sub' ? makeSub(variant) : inst === 'pad' ? makePad(variant) : inst === 'pluck' ? makePluck() : inst === 'kick808' ? makeKick() : MAKERS[inst]();
       Tone.connect(it.out, this.busFor(layer));
       this.instances.set(key, it);
     }
