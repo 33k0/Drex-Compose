@@ -1,6 +1,10 @@
 {
  "runs": [
   {
+   "name": "night-swimming-original",
+   "prompt": "swimming alone at night"
+  },
+  {
    "name": "night-swimming",
    "prompt": "swimming alone at night"
   },

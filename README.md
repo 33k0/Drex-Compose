@@ -6,6 +6,8 @@ Type a prompt such as *"swimming alone at night"* and get about three minutes of
 Every musical decision in it, about 400 of them, was made by [Drex](https://console.nace.ai/docs/drex),
 a model that cannot write a single note.
 
+**Try it: https://drex-compose.vercel.app**
+
 Built for the Nace Drexathon (Wildcard track) by EKo and Iniyan Kannappan.
 
 ## Contents
@@ -54,16 +56,17 @@ samples) and **smooth beats** (lo-fi, boom-bap, trap, funk and house, on synths 
 
 ## Listen
 
-Five pieces composed by live Drex are saved in [`replays/`](replays/) and play in the browser with every
-decision visible. On a running copy of the app, open:
+Six pieces composed by live Drex are saved in [`replays/`](replays/) and play in the browser with every
+decision visible:
 
-| Piece | Prompt | Address |
+| Piece | Prompt | Link |
 |---|---|---|
-| Night swimming | "swimming alone at night" | `/?replay=night-swimming` |
-| Night swimming, produced by Intern | "swimming alone at night" | `/?replay=night-swimming-by-intern` |
-| Smooth beats | "smooth late-night beats to relax to" | `/?replay=smooth-beats` |
-| Funk | "a funky upbeat groove for a summer block party" | `/?replay=funk` |
-| Trap | "a late-night rap beat with heavy 808s" | `/?replay=trap` |
+| Night swimming (first version: every phrase four bars, a full-orchestra climax) | "swimming alone at night" | [play](https://drex-compose.vercel.app/?replay=night-swimming-original) |
+| Night swimming (later version: phrases of 2 to 6 bars, pickups, a quiet clearing for a climax) | "swimming alone at night" | [play](https://drex-compose.vercel.app/?replay=night-swimming) |
+| Night swimming, produced by Intern | "swimming alone at night" | [play](https://drex-compose.vercel.app/?replay=night-swimming-by-intern) |
+| Smooth beats | "smooth late-night beats to relax to" | [play](https://drex-compose.vercel.app/?replay=smooth-beats) |
+| Funk | "a funky upbeat groove for a summer block party" | [play](https://drex-compose.vercel.app/?replay=funk) |
+| Trap | "a late-night rap beat with heavy 808s" | [play](https://drex-compose.vercel.app/?replay=trap) |
 
 A saved piece has a seek bar: play, pause, skip, or click the tension plan to jump to a phrase.
 
