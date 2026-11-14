@@ -2,27 +2,33 @@
  "runs": [
   {
    "name": "night-swimming-original",
-   "prompt": "swimming alone at night"
+   "prompt": "swimming alone at night",
+   "title": "Night swimming: first take"
   },
   {
    "name": "night-swimming",
-   "prompt": "swimming alone at night"
+   "prompt": "swimming alone at night",
+   "title": "Night swimming: quiet climax"
   },
   {
    "name": "night-swimming-by-intern",
-   "prompt": "swimming alone at night"
+   "prompt": "swimming alone at night",
+   "title": "Night swimming: produced by Intern"
   },
   {
    "name": "smooth-beats",
-   "prompt": "smooth late-night beats to relax to"
+   "prompt": "smooth late-night beats to relax to",
+   "title": "Smooth late-night beats"
   },
   {
    "name": "funk",
-   "prompt": "a funky upbeat groove for a summer block party"
+   "prompt": "a funky upbeat groove for a summer block party",
+   "title": "Summer block-party funk"
   },
   {
    "name": "trap",
-   "prompt": "a late-night rap beat with heavy 808s"
+   "prompt": "a late-night rap beat with heavy 808s",
+   "title": "Late-night trap"
   }
  ]
 }

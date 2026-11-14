@@ -30,7 +30,7 @@ export const PromptStage = memo(function PromptStage({ overlay, startWithSaved, 
   const audio = useSel((s) => s.audio.mode);
 
   const replay = replayName();
-  const [runs, setRuns] = useState<{ name: string; prompt: string }[]>([]);
+  const [runs, setRuns] = useState<{ name: string; prompt: string; title?: string }[]>([]);
   const [showSaved, setShowSaved] = useState(Boolean(startWithSaved));
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export const PromptStage = memo(function PromptStage({ overlay, startWithSaved, 
   // The saved tracks. In replay mode this run's prompt is filled in, so Enter plays it.
   useEffect(() => {
     fetch('/api/replays')
-      .then((res) => res.json() as Promise<{ runs: { name: string; prompt: string }[] }>)
+      .then((res) => res.json() as Promise<{ runs: { name: string; prompt: string; title?: string }[] }>)
       .then(({ runs: list }) => {
         setRuns(list);
         if (!replay) return;
@@ -123,7 +123,8 @@ export const PromptStage = memo(function PromptStage({ overlay, startWithSaved, 
                       onOpenSaved(r.name, r.prompt);
                     }}
                   >
-                    <span className="saved__title">{titleFromPrompt(r.prompt || r.name)}</span>
+                    {/* Several saved tracks can share one prompt: a track's own title, or its name, tells them apart. */}
+                    <span className="saved__title">{r.title ?? (runs.filter((x) => x.prompt === r.prompt).length > 1 ? `${titleFromPrompt(r.prompt || r.name)} (${r.name.replace(/[-_]/g, ' ')})` : titleFromPrompt(r.prompt || r.name))}</span>
                     <span className="saved__name">{r.name === replay ? 'open now' : r.name}</span>
                   </a>
                 </li>
