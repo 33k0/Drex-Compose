@@ -18,6 +18,21 @@
     {
       "source": "/api/replay/:name",
       "destination": "/replays/:name.json"
+    },
+    {
+      "source": "/api/theory",
+      "has": [
+        {
+          "type": "query",
+          "key": "style",
+          "value": "(?<style>[a-z_]+)"
+        }
+      ],
+      "destination": "/theory/:style.json"
+    },
+    {
+      "source": "/api/theory",
+      "destination": "/theory/default.json"
     }
   ]
 }

@@ -182,8 +182,7 @@ environment variables `NACE_API_KEY`, `DREX_MODEL=drex-max-v1.1`, `DREX_TIER=pai
 stand-in. Anyone who opens the site can compose, and each piece costs Drex credit.
 
 Differences from running locally: the function cannot hear the browser's playhead, so a piece is
-composed straight through instead of a few phrases ahead of playback, and the theory panel's book
-viewer is not available.
+composed straight through instead of a few phrases ahead of playback.
 
 ## Credits
 

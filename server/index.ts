@@ -11,6 +11,7 @@ import { apiKey } from './gateway/gateway.ts';
 import { modelFor } from './gateway/models.ts';
 import { pack, ROOT } from './pack.ts';
 import { Session } from './session.ts';
+import { bookPath, theoryData } from './theory.ts';
 import { scoresToMidi } from '../tools/midi.ts';
 
 const app = express();
@@ -128,68 +129,17 @@ app.get('/api/commissions/:id/piece.mid', (req, res) => {
 
 // Theory sources, for the panel that shows what Drex was given. `/api/theory` lists the four books
 // and the rules each kind of decision receives; `/api/books/<slug>` serves a book's scan.
-const BOOKS = join(ROOT, 'context-pack/books');
-const NDI = join(ROOT, 'context-pack/ndi');
-interface BookSource { slug: string; title: string; author: string; year: number; sourceUrl?: string; files?: Record<string, string> }
-function readJsonFile<T>(path: string): T | null {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as T;
-  } catch {
-    return null;
-  }
-}
-function bookSources(): BookSource[] {
-  return readJsonFile<{ books: BookSource[] }>(join(BOOKS, 'sources.json'))?.books ?? [];
-}
-/** The file a reader should open: the scan PDF when there is one, else the HTML transcription. */
-function bookFile(b: BookSource): string | null {
-  const names = Object.keys(b.files ?? {});
-  const name = names.find((n) => n.endsWith('.pdf')) ?? names.find((n) => n.endsWith('.html'));
-  return name && existsSync(join(BOOKS, b.slug, name)) ? name : null;
-}
-/** Printed page -> page of the scan PDF, from the chapter table. Null when the book has no scan. */
-function pdfPage(slug: string, printed: number): number | null {
-  const chapters = readJsonFile<{ chapters: { start_page: number; end_page: number; pdf_start_page: number | null }[] }>(join(NDI, slug, 'chapters.json'))?.chapters ?? [];
-  const ch = chapters.find((c) => printed >= c.start_page && printed <= c.end_page && c.pdf_start_page !== null);
-  return ch ? ch.pdf_start_page! + (printed - ch.start_page) : null;
-}
 app.get('/api/theory', (req, res) => {
-  const style = pack.sheets.find((s) => s.id === req.query.style)?.id;
-  const books = bookSources().map((b) => {
-    const file = bookFile(b);
-    // What NDI has really produced for this book: only a completed extract counts.
-    const extract = readJsonFile<{ producedBy?: string; rules?: unknown[] }>(join(NDI, b.slug, 'rules.json'));
-    const state = readJsonFile<{ parseJobId?: string; classify?: Record<string, unknown> }>(join(NDI, b.slug, 'state.json'));
-    const ndi = extract?.producedBy === 'ndi-extract' && state?.parseJobId
-      ? { parsed: true, chapters: Object.keys(state.classify ?? {}).length, rules: extract.rules?.length ?? 0 }
-      : null;
-    return {
-      slug: b.slug, title: b.title.split(/[:,]/)[0], author: b.author, year: b.year,
-      url: file ? `/api/books/${b.slug}` : b.sourceUrl ?? null, pdf: !!file?.endsWith('.pdf'),
-      rulesInPack: pack.rules.filter((r) => r.source?.book === b.slug).length, ndi,
-    };
-  });
-  const slices: Record<string, { text: string; book: string | null; ref: string | null; page: number | null }[]> = {};
-  for (const type of pack.sliceTypes()) {
-    slices[type] = pack.slice(type, style).map((r) => {
-      const printed = Number(/p\.\s*(\d+)/.exec(r.source?.ref ?? '')?.[1]);
-      return {
-        text: r.text, book: r.source?.book ?? null, ref: r.source?.ref ?? null,
-        page: r.source && Number.isFinite(printed) ? pdfPage(r.source.book, printed) : null,
-      };
-    });
-  }
-  res.json({ books, slices });
+  res.json(theoryData(typeof req.query.style === 'string' ? req.query.style : undefined, (slug) => `/api/books/${slug}`));
 });
 app.get('/api/books/:slug', (req, res) => {
-  const book = bookSources().find((b) => b.slug === req.params.slug);
-  const file = book && bookFile(book);
-  if (!book || !file) {
+  const path = bookPath(req.params.slug);
+  if (!path) {
     res.status(404).json({ error: 'No such book' });
     return;
   }
   // Inline, so the browser's PDF viewer opens it and honours #page=N.
-  res.sendFile(join(BOOKS, book.slug, file), { headers: { 'Content-Disposition': 'inline' } });
+  res.sendFile(path, { headers: { 'Content-Disposition': 'inline' } });
 });
 
 const dist = join(ROOT, 'dist');
