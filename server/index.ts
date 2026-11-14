@@ -1,7 +1,7 @@
 // HTTP + WebSocket server. Serves the sample library and hall recordings under /assets and runs
 // one composing session per socket.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import express from 'express';
@@ -23,6 +23,34 @@ app.get('/api/health', (_req, res) => {
     workedExamples: pack.examples.length,
   });
 });
+// Saved runs (eval/results/<name>/events.json, written by `npm run compose -- --json`), for the
+// browser's replay mode: /?replay=<name> plays one through the real engine without calling Drex.
+const RESULTS = join(ROOT, 'eval/results');
+const RUN_NAME = /^[A-Za-z0-9_.-]+$/;
+app.get('/api/replays', (_req, res) => {
+  const names = existsSync(RESULTS)
+    ? readdirSync(RESULTS).filter((name) => RUN_NAME.test(name) && !name.startsWith('.') && existsSync(join(RESULTS, name, 'events.json'))).sort()
+    : [];
+  const runs = names.map((name) => {
+    try {
+      const events = JSON.parse(readFileSync(join(RESULTS, name, 'events.json'), 'utf8')) as { type: string; prompt?: string }[];
+      return { name, prompt: events.find((e) => e.type === 'session')?.prompt ?? '' };
+    } catch {
+      return { name, prompt: '' };
+    }
+  });
+  res.json({ runs });
+});
+app.get('/api/replay/:name', (req, res) => {
+  const { name } = req.params;
+  const file = join(RESULTS, name, 'events.json');
+  if (!RUN_NAME.test(name) || name.startsWith('.') || !existsSync(file)) {
+    res.status(404).json({ error: `No saved run named "${name}"` });
+    return;
+  }
+  res.type('application/json').send(readFileSync(file, 'utf8'));
+});
+
 const dist = join(ROOT, 'dist');
 if (existsSync(dist)) {
   app.use(express.static(dist));

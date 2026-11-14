@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId, MeterId, ModeId, PhraseRole, PlanView, RulesView,
+  ArrivalId, EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId, MeterId, ModeId, PhraseRole, PlanView, RulesView,
   SoundWorld, StyleId,
 } from '../../shared/types.ts';
 import { TENSION_LEVELS, type Ctx } from '../context.ts';
@@ -15,7 +15,7 @@ import {
 } from '../core/theory.ts';
 import type { ChoiceOption, Question } from '../gateway/gateway.ts';
 import { pack, ROOT } from '../pack.ts';
-import { availableInstruments, INSTRUMENTS, PHRASE_BARS, ROLE_INSTRUMENTS, type Plan, type Section } from '../piece.ts';
+import { ARRIVAL_LABEL, ARRIVAL_TEXT, availableInstruments, INSTRUMENTS, PHRASE_BARS, ROLE_INSTRUMENTS, type Plan, type Section } from '../piece.ts';
 
 const opt = (key: string, label: string, criteria: string, prior = 0): ChoiceOption => ({ key, label, criteria, prior });
 
@@ -47,6 +47,7 @@ export function planView(ctx: Ctx, revised = false): PlanView {
     })),
     totalPhrases: plan.totalPhrases,
     climaxPhrase: plan.climaxPhrase,
+    climaxArrival: plan.climaxArrival,
     phraseSec: ctx.piece.phraseSec,
     revised,
   };
@@ -153,11 +154,12 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
     instructions: 'Choose the space the music is heard in.',
     options: (Object.keys(worldText) as SoundWorld[]).map((id) => opt(id, id.replace(/_/g, ' '), worldText[id], worldPrior[id])),
   };
-  const targetLen = 110 + m.size * 80 + (orch ? 20 : 0);
+  const targetLen = 165 + m.size * 30;
+  // Pieces stay around three minutes (product decision); Drex chooses within that.
   const length: Question = {
     id: 'length', type: 'choice', label: 'Length',
     instructions: 'Choose how long the piece lasts. Bigger arcs need more time; a small idea should not outstay its welcome.',
-    options: Array.from({ length: 11 }, (_x, i) => 60 + i * 30).map((s) =>
+    options: [150, 180, 210].map((s) =>
       opt(`s${s}`, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, `${Math.floor(s / 60)} min ${s % 60 ? `${s % 60} s` : ''}`.trim(), -(((s - targetLen) / 35) ** 2))),
   };
   const formText: Record<FormId, string> = {
@@ -345,6 +347,9 @@ export function applyKeyPlan(sections: Section[], home: Key, plan: KeyPlanId, cl
   }
 }
 
+/** Tempo of the climax phrase when Drex chooses a broadened arrival, as a share of the base tempo (proposed; tune by ear). */
+export const BROADEN = 0.85;
+
 export async function runPlan(ctx: Ctx): Promise<void> {
   const { piece, gw } = ctx;
   const { rules, mood } = piece;
@@ -385,6 +390,19 @@ export async function runPlan(ctx: Ctx): Promise<void> {
     instructions: 'How far through the piece should the climax fall?',
     options: [50, 60, 70, 80, 90].map((pc) => opt(`at_${pc}`, `${pc}%`, `${pc}% of the way through`, -(((pc / 100 - climaxAt) / 0.09) ** 2))),
   });
+  const orchStyle = rules.style === 'bittersweet_orchestral';
+  const arrivalPrior: Record<ArrivalId, number> = {
+    swell: (1 - mood.size) * 1.4 + (1 - mood.energy) * 0.6 - 0.9,
+    hit: orchStyle ? 0.2 : 1.2,
+    open_wall: (orchStyle ? 0.9 : 0) + mood.size * 1.2 + mood.water * 0.5,
+    broaden: mood.size * 1.1 + mood.darkness * 0.8 - 0.6,
+  };
+  questions.push({
+    id: 'climax_arrival', type: 'choice', label: 'How the climax arrives',
+    // The prompt is quoted here because it is a tiny share of the state: measured live, that is what lets it steer this choice.
+    instructions: `The piece is "${piece.prompt}". How should its climax arrive?`,
+    options: (Object.keys(ARRIVAL_TEXT) as ArrivalId[]).map((a) => opt(a, ARRIVAL_LABEL[a], ARRIVAL_TEXT[a], arrivalPrior[a])),
+  });
   questions.push({
     id: 'counter_theme', type: 'noul', label: 'Needs a counter-theme',
     instructions: 'Does this piece need a counter-theme derived from the main theme, to run against it in fuller sections?',
@@ -419,10 +437,13 @@ export async function runPlan(ctx: Ctx): Promise<void> {
 
   const plan: Plan = {
     sections, totalPhrases: total, climaxPhrase,
+    climaxArrival: p.climax_arrival as ArrivalId,
     needsCounter: ans.values.counter_theme >= 0.5,
     needsContrast: ans.values.contrast_theme >= 0.5 || sections.some((s) => s.departure),
   };
   piece.plan = plan;
+  // A broadened arrival: the climax phrase itself is played slower.
+  if (plan.climaxArrival === 'broaden') piece.phraseBpm.set(climaxPhrase, Math.round(rules.bpm * BROADEN));
   ctx.emit({ type: 'plan', plan: planView(ctx) });
 }
 

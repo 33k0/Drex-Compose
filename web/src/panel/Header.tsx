@@ -89,7 +89,7 @@ const AudioBadge = memo(function AudioBadge() {
 
 export const ConnBadge = memo(function ConnBadge() {
   const conn = useSel((s) => s.conn);
-  const label = conn === 'open' ? 'Live' : conn === 'mock' ? 'Mock feed' : conn === 'connecting' ? 'Connecting' : 'Reconnecting';
+  const label = conn === 'open' ? 'Live' : conn === 'mock' ? 'Mock feed' : conn === 'replay' ? 'Saved run' : conn === 'connecting' ? 'Connecting' : 'Reconnecting';
   return (
     <span className={`conn conn--${conn}`} role="status">
       <i aria-hidden="true" />

@@ -11,7 +11,7 @@ import { clamp, mod } from '../core/rng.ts';
 import { chordName, chordPcs, degreeToMidi, fitOf, keyName, MODES, type Key } from '../core/theory.ts';
 import { applyOps } from '../core/transform.ts';
 import type { ChoiceOption, Picks, Question } from '../gateway/gateway.ts';
-import { INSTRUMENTS, ROLE_INSTRUMENTS, type PhraseRecord, type Piece, type Slot } from '../piece.ts';
+import { ARRIVAL_LABEL, INSTRUMENTS, isWall, ROLE_INSTRUMENTS, type PhraseRecord, type Piece, type Slot } from '../piece.ts';
 import { linger } from './ending.ts';
 import type { Draft } from './phrase.ts';
 
@@ -81,8 +81,13 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
   const overall = clamp(Math.round(t - 1 + (role === 'climax' ? 1 : 0) + (role === 'coda' ? -0.5 : 0)), 0, 6);
   const questions: Question[] = [];
   const offered = {} as Record<LayerRole, InstrumentId[]>;
+  // How Drex chose the climax to arrive (plan call). A wall fixes this phrase's overall dynamics,
+  // filter, pulse and figuration, so those are not asked again here.
+  const arrival = piece.plan.climaxArrival;
+  const atClimax = index === piece.plan.climaxPhrase;
+  const wall = atClimax && isWall(arrival);
 
-  questions.push({
+  if (!wall) questions.push({
     id: 'overall_dynamics', type: 'score', label: 'Overall dynamics',
     instructions: `How loud is this phrase overall? Target tension is ${t} of 7.`,
     levels: DYNAMIC_LEVELS, prior: overall, spread: 0.6,
@@ -120,6 +125,7 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     if (r === 'counter' && draft.direction.counter === 'none' && !flags.overlap) pool = [];
     // A handoff was chosen for this phrase: the melody must move to a different instrument.
     if (r === 'melody' && flags.handoff && pool.length > 1) pool = pool.filter((id) => id !== lastInst('melody'));
+    if (wall && (r === 'figuration' || r === 'pulse')) pool = []; // the wall: pulse and figuration fall away
     offered[r] = pool;
     if (!pool.length) continue;
     const forced = (r === 'pedal' && flags.pedal_underlay) || (r === 'counter' && flags.overlap);
@@ -164,7 +170,7 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
       opt('high', 'high', 'high: bright, exposed, soaring', -0.5 + t * 0.22 + (role === 'climax' ? 1.4 : 0) + (level('high', 'airborne') ? 1 : 0)),
     ],
   });
-  questions.push({
+  if (!wall) questions.push({
     id: 'melody_style', type: 'choice', label: 'melody: playing style',
     instructions: 'How should the melody be played?',
     options: [
@@ -198,7 +204,7 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     options: [
       opt('sustain', 'sustained', 'sustained: a smooth bed', 1.4 - (play ? 0.8 : 0)),
       opt('tremolo', 'tremolo', 'tremolo: shivering, charged, tense', -1 + (t >= 5 ? 1.6 : 0) + (orch ? 0.3 : 0) + (moves('shaking') ? 1.6 : 0)),
-      opt('pulsed', 'pulsed', 'pulsed: repeated chords on the beat; urgency or bounce', -0.6 + (play ? 1.6 : 0) + (t >= 5 ? 0.6 : 0) + (beat ? 0.6 : 0) + (moves('bouncing', 'sharp') ? 0.9 : 0)),
+      ...(wall ? [] : [opt('pulsed', 'pulsed', 'pulsed: repeated chords on the beat; urgency or bounce', -0.6 + (play ? 1.6 : 0) + (t >= 5 ? 0.6 : 0) + (beat ? 0.6 : 0) + (moves('bouncing', 'sharp') ? 0.9 : 0))]),
     ],
   });
   questions.push({
@@ -272,13 +278,16 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     ['tam_tam', 'tam-tam', 'tam-tam: a dark metallic wash that blooms after the stroke', ['tam_tam'], 0.2 + m.darkness * 0.6],
     ['crash', 'kit crash', 'drum-kit crash and kick: a drop landing', ['drumkit'], beat ? 1.4 : 0],
   ];
-  const accentPool = accentKinds.filter(([key, , , needs]) => (key === 'full_hit' ? needs.filter((id) => rules.palette.includes(id)).length >= 2 : needs.every((id) => rules.palette.includes(id))));
+  // A swell arrival has no blow at the peak; a hit arrival always has one.
+  const noAccent = atClimax && arrival === 'swell';
+  const hitArrival = atClimax && arrival === 'hit';
+  const accentPool = noAccent ? [] : accentKinds.filter(([key, , , needs]) => (key === 'full_hit' ? needs.filter((id) => rules.palette.includes(id)).length >= 2 : needs.every((id) => rules.palette.includes(id))));
   offered.accents = accentPool.length ? (accentPool.flatMap((a) => a[3]).filter((id, i, all) => rules.palette.includes(id) && all.indexOf(id) === i)) : [];
   if (accentPool.length) {
     questions.push({
       id: 'accents_in', type: 'noul', label: 'accents: in',
-      instructions: 'Should this phrase have an accent: a hit or swell at a chosen moment?',
-      prior: clamp(Math.max(inPrior.accents, cue?.peak && cue.peak.strength >= 5 ? 0.9 : cue?.cut ? 0.45 : 0), 0.02, 0.98),
+      instructions: `Should this phrase have an accent: a hit or swell at a chosen moment?${hitArrival ? ' (The plan already calls for it: the climax arrives as a hit.)' : ''}`,
+      prior: hitArrival ? 0.98 : clamp(Math.max(inPrior.accents, cue?.peak && cue.peak.strength >= 5 ? 0.9 : cue?.cut ? 0.45 : 0), 0.02, 0.98),
     });
     questions.push({
       id: 'accents_kind', type: 'choice', label: 'accents: kind',
@@ -322,6 +331,7 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     ['saturation', 'Saturation', 'How much saturation? (a little = warmth; a lot = grit)', beat ? 1.6 + t * 0.35 : 0.6 + (t >= 6 ? 1 : 0)],
   ];
   for (const [id, label, text, prior] of fx) {
+    if (wall && id === 'lowpass') continue; // the wall opens the filter fully
     questions.push({ id: `fx_${id}`, type: 'score', label, instructions: text, levels: AMOUNT_LEVELS, prior: clamp(prior, 0, 6), spread: 0.6 });
   }
   questions.push({ id: 'fx_chorus', type: 'noul', label: 'Chorus', instructions: 'Should chorus thicken the pads and strings in this phrase?', prior: beat ? 0.6 : 0.12 + (t >= 5 ? 0.15 : 0) });
@@ -431,6 +441,7 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
     if (r === 'melody' && has) on = on || !LAYERS.some((x) => x !== 'melody' && picks[`${x}_in`] === 'yes'); // something must sound
     if (r === 'pedal' && has && flags.pedal_underlay) on = true;
     if (r === 'counter' && has && flags.overlap) on = true;
+    if (r === 'accents' && has && index === piece.plan.climaxPhrase && piece.plan.climaxArrival === 'hit') on = true;
     const inst = on ? ((r === 'accents' ? null : (picks[`${r}_inst`] as InstrumentId)) ?? null) : null;
     const wasIn = !!last?.layers.find((l) => l.role === r && l.inst);
     chosen[r] = {
@@ -742,8 +753,7 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
 
   // A pause before the hit: everything falls silent for an instant just before it.
   if (acc.on && hitAt !== null && hitAt >= bar && picks.pause_before_hit === 'yes') {
-    const gap = clamp(q((0.55 * piece.bpmOf(index)) / 60), rules.meter.sub === 3 ? 1 / 3 : 0.5, 1);
-    const from = hitAt - gap;
+    const from = hitAt - breathBeats(piece, index);
     for (let i = notes.length - 1; i >= 0; i--) {
       const n = notes[i];
       if (n.layer === 'accents' && n.art === 'roll') continue; // the swell is what fills the breath
@@ -805,17 +815,39 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
   return { notes, pedal, layers, mix, holdChord };
 }
 
+/** Length of a held breath in beats: about half a second, at least one subdivision, at most a beat. */
+function breathBeats(piece: Piece, index: number): number {
+  return clamp(q((0.55 * piece.bpmOf(index)) / 60), piece.rules.meter.sub === 3 ? 1 / 3 : 0.5, 1);
+}
+
+/** The held breath before a wall: everything stops just before the bar line (the hall still rings). */
+function holdBreath(piece: Piece, index: number, w: Written): void {
+  const from = piece.beatsOf(index) - breathBeats(piece, index);
+  for (let i = w.notes.length - 1; i >= 0; i--) {
+    const n = w.notes[i];
+    if (n.t >= from - 1e-6) w.notes.splice(i, 1);
+    else if (n.t + n.dur > from) n.dur = q(from - n.t);
+  }
+  w.pedal = w.pedal.filter((p) => p.t < from);
+  if (w.pedal.length) w.pedal.push({ t: q(from), down: false });
+}
+
 // ───────────────────────────── The call ─────────────────────────────
 
 export async function orchestrate(ctx: Ctx, index: number, draft: Draft): Promise<PhraseRecord> {
   const { piece, gw } = ctx;
   const { questions, offered } = buildQuestions(ctx, index, draft);
+  const arrival = piece.plan.climaxArrival;
+  const wall = index === piece.plan.climaxPhrase && isWall(arrival);
+  const breath = index === piece.plan.climaxPhrase - 1 && isWall(arrival);
   const ans = await gw.ask({
     callType: 'orchestration', title: `Phrase ${index + 1}: orchestration and mix`,
     state: piece.state('orchestration', index, [
       `ACCEPTED ${notation(draft.line)}   = ${draft.lineage}`,
       `CHORDS  ${draft.slots.map((s) => `${chordName(s.chord, draft.key)} (bass: ${s.bass.replace('_', ' ')})`).join(' | ')}; key ${keyName(draft.key)}`,
       `PALETTE ${piece.rules.palette.map((id) => INSTRUMENTS[id].name).join(', ')}`,
+      ...(wall ? [`ARRIVAL this phrase is the climax, and the plan has it arrive as: ${ARRIVAL_LABEL[arrival]}. Already decided by that choice: overall dynamics fff, filter fully open, no pulse and no figuration, everything sustained.`] : []),
+      ...(breath ? ['ARRIVAL the next phrase is the climax, arriving after a held breath: this phrase stops just before its final bar line.'] : []),
     ]),
     questions, picking: 'top',
   });
@@ -826,7 +858,13 @@ export async function orchestrate(ctx: Ctx, index: number, draft: Draft): Promis
     const next = Object.entries(ans.probabilities.counter_inst ?? {}).sort((a, b) => b[1] - a[1]).find(([id]) => id !== picks.melody_inst);
     if (next) picks.counter_inst = next[0];
   }
+  // The wall is what Drex chose in the plan: full volume, the filter fully open.
+  if (wall) {
+    picks.overall_dynamics = '6';
+    picks.fx_lowpass = '6';
+  }
   const w = write(ctx, index, draft, picks, ans.values, offered);
+  if (breath) holdBreath(piece, index, w);
   const holdSec = piece.phraseHoldSec.get(index) ?? 0;
   const section = piece.sectionOf(index);
   const role = piece.roleOf(index);
@@ -837,7 +875,7 @@ export async function orchestrate(ctx: Ctx, index: number, draft: Draft): Promis
     display: {
       key: keyName(draft.key),
       notation: notation(draft.line),
-      lineage: `phrase ${index + 1} = ${draft.lineage}`,
+      lineage: `phrase ${index + 1} = ${draft.lineage}${wall ? `; the climax arrives: ${ARRIVAL_LABEL[arrival]}` : breath ? '; ends on a held breath' : ''}`,
       chords: draft.slots.map((s) => chordName(s.chord, draft.key)),
       layers: w.layers,
       tension: piece.tensionOf(index),

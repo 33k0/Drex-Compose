@@ -65,7 +65,8 @@ const FALLBACK_SHEETS: StyleSheet[] = [
 /** Which digest slices each of the engine's calls reads. */
 const SLICE: Partial<Record<CallType, { calls: string[]; topics?: string[]; max: number }>> = {
   setup: { calls: ['setup'], max: 14 },
-  plan: { calls: ['plan'], max: 16 },
+  // Every plan-tagged rule fits: at 16 the round robin cut the peak-shaping rules (one main peak, pull back before it).
+  plan: { calls: ['plan'], max: 25 },
   plan_revision: { calls: ['plan'], topics: ['scoring_to_picture', 'dynamics_pacing', 'form', 'tension_release', 'departure_return'], max: 10 },
   theme_shape: { calls: ['theme_draft'], topics: ['melody', 'phrase_structure'], max: 14 },
   theme_note: { calls: ['theme_draft'], topics: ['melody'], max: 12 },

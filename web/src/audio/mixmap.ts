@@ -78,7 +78,8 @@ export function mixToParams(mix: MixState, world: SoundWorld = 'large_hall'): Mi
   const satPre = 0.5 * Math.pow(8, step(mix.saturation) / 6);
   const satPost = Math.pow(satPre, -0.75) / (0.5 * Math.pow(0.5, -0.75));
 
-  const master = dbToGain(-14 + 14 * (step(mix.dynamics) / 6));
+  // pp sits 18 dB under fff: 3 dB a step, so f to fff is a 6 dB jump (proposed; tune by ear).
+  const master = dbToGain(-18 + 18 * (step(mix.dynamics) / 6));
 
   return { lowpassHz, reverbWet, dry, delayWet, noiseGain, width, satPre, satPost, chorusWet: mix.chorus ? 0.38 : 0, master, sidechain: !!mix.sidechain };
 }

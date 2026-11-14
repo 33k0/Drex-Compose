@@ -76,7 +76,7 @@
 }
 
 .conn--open i { background: var(--accent); }
-.conn--mock i { background: var(--ink-2); }
+.conn--mock i, .conn--replay i { background: var(--ink-2); }
 .conn--connecting i, .conn--reconnecting i { background: var(--reject); animation: conn-wait 1.1s var(--ease-in-out) infinite alternate; }
 
 @keyframes conn-wait {

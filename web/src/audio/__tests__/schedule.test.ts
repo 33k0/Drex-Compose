@@ -456,7 +456,7 @@ test('MixState mapping endpoints', () => {
   near(20 * Math.log10(mixToParams(mix({ noise: 6 })).noiseGain), -14);
   near(mixToParams(mix({ width: 3 })).width, 0.5);
   assert.ok(mixToParams(mix({ width: 0 })).width < 0.2 && mixToParams(mix({ width: 6 })).width > 0.65 && mixToParams(mix({ width: 6 })).width < 1);
-  near(20 * Math.log10(mixToParams(mix({ dynamics: 0 })).master), -14);
+  near(20 * Math.log10(mixToParams(mix({ dynamics: 0 })).master), -18);
   near(mixToParams(mix({ dynamics: 6 })).master, 1);
   const s0 = mixToParams(mix({ saturation: 0 }));
   const s6 = mixToParams(mix({ saturation: 6 }));

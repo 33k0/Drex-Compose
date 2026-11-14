@@ -114,6 +114,50 @@ export function createMockTransport(handlers: Handlers): Transport {
   };
 }
 
+/** /?replay=<name>: the saved run eval/results/<name>/events.json, or null when not replaying. */
+export function replayName(): string | null {
+  const name = new URLSearchParams(location.search).get('replay');
+  return name && /^[A-Za-z0-9_.-]+$/.test(name) ? name : null;
+}
+
+/**
+ * Replays a saved run: every event Drex's session produced, fed through the same path as a live run,
+ * so the real engine plays it with its samples and hall. No request goes to Drex.
+ */
+export function createReplayTransport(name: string, handlers: Handlers): Transport {
+  let run = 0;
+  handlers.onConn('replay');
+  return {
+    send(event) {
+      if (event.type === 'stop') {
+        run += 1;
+        return;
+      }
+      if (event.type !== 'start') return; // playback reports have no server to go to
+      const mine = ++run;
+      fetch(`/api/replay/${encodeURIComponent(name)}`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 200)}`);
+          return (await res.json()) as ServerEvent[];
+        })
+        .then((events) => {
+          for (const e of events) {
+            if (mine !== run) return;
+            handlers.onEvent(e);
+          }
+        })
+        .catch((err: unknown) => {
+          if (mine !== run) return;
+          handlers.onEvent({ type: 'error', message: `Could not load saved run "${name}": ${err instanceof Error ? err.message : String(err)}` });
+          handlers.onEvent({ type: 'status', stage: 'error', message: `Could not load saved run "${name}"` });
+        });
+    },
+    close() {
+      run += 1;
+    },
+  };
+}
+
 export function isMockMode(): boolean {
   return new URLSearchParams(location.search).get('mock') === '1';
 }

@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSel } from '../store';
+import { replayName } from '../transport';
 import { ConnBadge } from './Header';
 import './promptStage.css';
 
@@ -24,9 +25,25 @@ export const PromptStage = memo(function PromptStage({ overlay, onSubmit, onClos
   const conn = useSel((s) => s.conn);
   const audio = useSel((s) => s.audio.mode);
 
+  const replay = replayName();
+  const [runs, setRuns] = useState<{ name: string; prompt: string }[]>([]);
+
   useEffect(() => {
     input.current?.focus();
   }, []);
+
+  // Replay mode: list the saved runs and fill in this run's prompt, so Enter plays it.
+  useEffect(() => {
+    if (!replay) return;
+    fetch('/api/replays')
+      .then((res) => res.json() as Promise<{ runs: { name: string; prompt: string }[] }>)
+      .then(({ runs: list }) => {
+        setRuns(list);
+        const mine = list.find((r) => r.name === replay);
+        setValue((v) => v || mine?.prompt || replay);
+      })
+      .catch(() => setValue((v) => v || replay));
+  }, [replay]);
 
   const submit = (e: FormEvent): void => {
     e.preventDefault();
@@ -38,7 +55,9 @@ export const PromptStage = memo(function PromptStage({ overlay, onSubmit, onClos
     input.current?.focus();
   };
 
-  const note = conn === 'mock'
+  const note = conn === 'replay'
+    ? `Saved run "${replay}": press Compose to play it with the real samples and hall. Drex is not called again; the prompt box is ignored.`
+    : conn === 'mock'
     ? 'Mock feed: a scripted run, not the real Drex.'
     : conn === 'open'
       ? null
@@ -75,6 +94,17 @@ export const PromptStage = memo(function PromptStage({ overlay, onSubmit, onClos
           </div>
         </form>
 
+        {replay ? (
+          <ul className="stage__chips" aria-label="Saved runs">
+            {runs.map((r) => (
+              <li key={r.name}>
+                <a className="chip" href={`?replay=${encodeURIComponent(r.name)}`} aria-current={r.name === replay || undefined} title={r.prompt}>
+                  {r.name === replay ? `▶ ${r.name}` : r.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
         <ul className="stage__chips" aria-label="Example prompts">
           {EXAMPLES.map((text) => (
             <li key={text}>
@@ -84,6 +114,7 @@ export const PromptStage = memo(function PromptStage({ overlay, onSubmit, onClos
             </li>
           ))}
         </ul>
+        )}
 
         <div className="stage__foot">
           <ConnBadge />

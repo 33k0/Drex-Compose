@@ -14,7 +14,7 @@ export type EngineEvent =
   | { type: 'hold_ended' }
   | { type: 'ended' };
 
-export type Conn = 'connecting' | 'open' | 'reconnecting' | 'mock';
+export type Conn = 'connecting' | 'open' | 'reconnecting' | 'mock' | 'replay';
 export type RunPhase = 'idle' | 'starting' | 'running' | 'finished' | 'stopped' | 'error';
 /** pending: engine still loading. real: sound comes out. silent: engine unavailable, a timer stands in. */
 export type AudioMode = 'pending' | 'real' | 'silent';

@@ -6,7 +6,7 @@ import { engineRef, loadRealEngine, type EngineLike } from './engineBridge';
 import { FakeEngine } from './fakeEngine';
 import type { Conn, EngineEvent } from './state';
 import { store } from './store';
-import { createMockTransport, createSocketTransport, isMockMode, type Transport } from './transport';
+import { createMockTransport, createReplayTransport, createSocketTransport, isMockMode, replayName, type Transport } from './transport';
 
 class Controller {
   private transport: Transport | null = null;
@@ -29,7 +29,10 @@ class Controller {
       onEvent: (e: ServerEvent) => this.onServerEvent(e),
       onConn: (conn: Conn) => store.dispatch({ type: 'local/conn', conn }),
     };
-    this.transport = isMockMode() ? createMockTransport(handlers) : createSocketTransport(handlers);
+    const replay = replayName();
+    this.transport = replay
+      ? createReplayTransport(replay, handlers)
+      : isMockMode() ? createMockTransport(handlers) : createSocketTransport(handlers);
 
     this.engineReady = loadRealEngine()
       .then((engine) => {

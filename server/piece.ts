@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Articulation, EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId, LayerRole, LayerSummary,
+  ArrivalId, Articulation, EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId, LayerRole, LayerSummary,
   MixState, PhraseRole, PhraseScore, SoundWorld, StyleId,
 } from '../shared/types.ts';
 import { DYNAMIC_NAMES } from '../shared/types.ts';
@@ -149,6 +149,8 @@ export interface Plan {
   sections: Section[];
   totalPhrases: number;
   climaxPhrase: number;
+  /** How the climax arrives; Drex's choice in the plan call. */
+  climaxArrival: ArrivalId;
   needsCounter: boolean;
   needsContrast: boolean;
 }
@@ -209,6 +211,19 @@ export interface PhraseRecord {
 
 export const PHRASE_BARS = 4;
 
+/** The ways a climax can arrive, as Drex reads them. */
+export const ARRIVAL_TEXT: Record<ArrivalId, string> = {
+  swell: 'no break: the peak simply arrives at the top of a long crescendo, with the pulse carrying straight through. Continuous and gentle; for pieces that should never shock',
+  hit: 'a hit: one accented blow lands on top of the same texture, which then carries on as before. A landmark, not a change of state',
+  open_wall: 'a held breath, then the wall: everything stops for an instant, then the pulse and figuration fall away and the whole ensemble opens into one sustained wall of sound, at full volume with the filter fully open. Awe, release, breaking the surface',
+  broaden: 'the same held breath and wall of sound, and the tempo also broadens at the arrival, so the peak feels vast and slowed, time stretching',
+};
+export const ARRIVAL_LABEL: Record<ArrivalId, string> = {
+  swell: 'swell, no break', hit: 'a hit', open_wall: 'held breath, then the wall', broaden: 'held breath, wall, tempo broadens',
+};
+/** The climax arrives as a wall of sound (with or without broadening). */
+export const isWall = (a: ArrivalId | undefined): boolean => a === 'open_wall' || a === 'broaden';
+
 /** What the picture is doing under one phrase. Only set when the engine is scoring a video. */
 export interface PictureCue {
   /** Lines added to the state (VIDEO, AHEAD). */
@@ -235,7 +250,7 @@ export class Piece {
   lastChord: Chord | null = null;
   lastReject = '';
   endingPlan: Record<string, string> | null = null;
-  /** Per-phrase overrides. Prompt-to-music never sets these; fitting music to picture does. */
+  /** Per-phrase overrides: the broadened climax sets the tempo of one phrase; fitting music to picture sets all three. */
   phraseBars = new Map<number, number>();
   phraseBpm = new Map<number, number>();
   /** Seconds of held chord appended to a phrase so the music lands on a cut. */
@@ -327,7 +342,7 @@ export class Piece {
     const deps = p.sections.filter((s) => s.departure).map((s) => s.index + 1);
     return (
       `PLAN    ${p.sections.length} sections, roles ${p.sections.map((s) => s.role).join(' / ')}; tension ${p.sections.map((s) => s.tension).join(' ')} (1 calm … 7 overwhelming); ` +
-      `departure = ${deps.length ? deps.join(', ') : 'none'}; climax = phrase ${p.climaxPhrase + 1} (section ${this.sectionOf(p.climaxPhrase).index + 1}); ending: ${this.rules.ending.replace(/_/g, ' ')}`
+      `departure = ${deps.length ? deps.join(', ') : 'none'}; climax = phrase ${p.climaxPhrase + 1} (section ${this.sectionOf(p.climaxPhrase).index + 1}), arriving as ${ARRIVAL_LABEL[p.climaxArrival ?? 'hit']}; ending: ${this.rules.ending.replace(/_/g, ' ')}`
     );
   }
 

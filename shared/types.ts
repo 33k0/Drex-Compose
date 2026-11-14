@@ -13,6 +13,8 @@ export type SoundWorld = 'close_dry' | 'large_hall' | 'submerged' | 'electronic_
 export type FormId = 'arch' | 'slow_build' | 'theme_development_return' | 'through_composed' | 'verse_like';
 export type EndingId = 'resolved' | 'suspended' | 'fade' | 'sudden_stop';
 export type KeyPlanId = 'none' | 'relative' | 'step_up_at_climax' | 'distant_dark_turn';
+/** How the climax arrives: Drex picks one in the plan call. */
+export type ArrivalId = 'swell' | 'hit' | 'open_wall' | 'broaden';
 export type PhraseRole = 'statement' | 'development' | 'departure' | 'return' | 'climax' | 'coda';
 
 export type LayerRole =
@@ -221,6 +223,8 @@ export interface PlanView {
   sections: SectionView[];
   totalPhrases: number;
   climaxPhrase: number;
+  /** How the climax arrives (see ArrivalId). */
+  climaxArrival?: ArrivalId;
   /** Seconds per phrase at the base tempo. */
   phraseSec: number;
   revised: boolean;
