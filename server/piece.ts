@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   ArrivalId, Articulation, EndingId, FormId, GrooveId, HarmonicLanguage, InstrumentId, KeyPlanId, LayerRole, LayerSummary,
-  MixState, PhraseRole, PhraseScore, SoundWorld, StyleId,
+  MixState, PartId, PhraseRole, PhraseScore, SoundWorld, StyleId,
 } from '../shared/types.ts';
 import { DYNAMIC_NAMES } from '../shared/types.ts';
 import { notation, type Line } from './core/line.ts';
@@ -55,18 +55,31 @@ export const INSTRUMENTS: Record<string, InstrumentInfo> = Object.fromEntries(
     I('pluck', 'Pluck synth', [36, 96], 'short bright electronic pluck', ['staccato'], true),
     I('kick808', 'Electronic kick (808)', [36, 36], 'round low electronic thump; with a drum kit in the palette, the kit plays snare and hats around it', ['hit'], true),
     I('noise', 'Water and wave texture', [60, 60], 'filtered noise with a slow swell: water, air', ['sustain'], true),
+    // The sounds of pop, dance and hip-hop production. Offered to beat-driven pieces only.
+    I('keys', 'Electric piano', [36, 96], 'warm, glassy electric piano: the chords and fills of pop, R&B and neo-soul', ['sustain', 'staccato'], true),
+    I('lead', 'Synth lead', [48, 96], 'a bright, cutting synth lead: the voice that carries a hook in pop and dance music', ['sustain', 'staccato'], true),
+    I('supersaw', 'Supersaw stack', [36, 91], 'a wide wall of detuned saw waves: the huge chords of a dance-pop chorus', ['sustain', 'staccato'], true),
+    I('synth_bass', 'Synth bass', [24, 60], 'a punchy, buzzy synth bass with bite: funk, electro and pop bass lines that move', ['sustain', 'staccato'], true),
+    I('bell', 'Bell synth', [60, 108], 'a glassy digital bell: sparkling hooks and answers on top, as in trap and pop', ['sustain'], true),
+    I('brass', 'Synth brass', [43, 86], 'punchy synth brass: stabs and riffs, the horn section of funk and eighties pop', ['sustain', 'staccato'], true),
   ].map((i) => [i.id, i]),
 );
 
+/** Production sounds that belong to beat-driven music, and the orchestral ones that do not. */
+export const MODERN_SOUNDS: InstrumentId[] = ['keys', 'lead', 'supersaw', 'synth_bass', 'bell', 'brass'];
+const BEAT_SOUNDS: InstrumentId[] = [...MODERN_SOUNDS, 'sub', 'pad', 'pluck', 'kick808', 'noise', 'drumkit', 'piano'];
+/** The instruments a style may draw on: a pop song is not scored for clarinet, nor a string elegy for supersaws. */
+export const offeredTo = (style: StyleId, id: string): boolean => (style === 'beat_driven' ? BEAT_SOUNDS.includes(id as InstrumentId) : !MODERN_SOUNDS.includes(id as InstrumentId));
+
 /** Which instruments can take each layer role (the layering table). */
 export const ROLE_INSTRUMENTS: Record<LayerRole, InstrumentId[]> = {
-  melody: ['piano', 'solo_violin', 'violins', 'flute', 'oboe', 'clarinet', 'pluck', 'celesta', 'glockenspiel', 'vibraphone'],
-  counter: ['celli', 'violas', 'horn', 'clarinet', 'violins2', 'oboe', 'flute', 'vibraphone'],
-  inner: ['violas', 'violins2', 'pad', 'piano', 'horn'],
-  bass: ['basses', 'celli', 'piano', 'sub'],
-  pedal: ['basses', 'celli', 'piano', 'horn', 'sub'],
-  figuration: ['piano', 'harp', 'violins2', 'violas', 'pluck', 'celesta'],
-  texture: ['noise', 'violins', 'pad', 'cymbal'],
+  melody: ['piano', 'solo_violin', 'violins', 'flute', 'oboe', 'clarinet', 'pluck', 'celesta', 'glockenspiel', 'vibraphone', 'lead', 'keys', 'bell', 'brass'],
+  counter: ['celli', 'violas', 'horn', 'clarinet', 'violins2', 'oboe', 'flute', 'vibraphone', 'keys', 'brass', 'bell', 'lead'],
+  inner: ['violas', 'violins2', 'pad', 'piano', 'horn', 'keys', 'supersaw', 'brass'],
+  bass: ['basses', 'celli', 'piano', 'sub', 'synth_bass'],
+  pedal: ['basses', 'celli', 'piano', 'horn', 'sub', 'synth_bass'],
+  figuration: ['piano', 'harp', 'violins2', 'violas', 'pluck', 'celesta', 'keys', 'bell'],
+  texture: ['noise', 'violins', 'pad', 'cymbal', 'supersaw'],
   pulse: ['drumkit', 'kick808', 'timpani'],
   accents: ['bass_drum', 'cymbal', 'timpani', 'piano', 'tam_tam', 'drumkit'],
 };
@@ -127,8 +140,9 @@ export const GROOVES: Record<GrooveId, { label: string; text: string; bpm: numbe
     text: 'trap and modern rap: 130 to 150 BPM felt in half time, the snare on beat three, fast hi-hats with rolls, long 808 bass notes that hit with the kick' },
   funk: { label: 'funk', bpm: 104, patterns: ['funk', 'backbeat', 'syncopated'],
     text: 'funk: 95 to 115 BPM, sixteenth-note hats, kick and bass locked in a syncopated figure, ghost notes on the snare, everything pointing at beat one' },
-  pop: { label: 'pop', bpm: 110, patterns: ['backbeat', 'four_on_floor', 'half_time', 'syncopated'],
-    text: 'modern pop: 96 to 124 BPM, a plain strong backbeat, a four-chord loop and a short hook that repeats' },
+  // Smooth beats are the centre of this style. Chart pop was tried and dropped: its sound needs vocals and production we do not have.
+  lofi: { label: 'lo-fi', bpm: 80, patterns: ['boom_bap', 'half_time', 'backbeat'],
+    text: 'lo-fi and chill beats: 70 to 90 BPM, soft swung drums that sit back, mellow electric-piano chords with sevenths and ninths, a warm round bass, a short unhurried motif, everything gentle and a little hazy' },
 };
 
 export interface Rules {
@@ -150,6 +164,8 @@ export interface Rules {
 export interface Section {
   index: number;
   role: PhraseRole;
+  /** Beat-driven pieces: the song part (verse, chorus…) Drex gave this section. */
+  part?: PartId;
   /** 1..7 */
   tension: number;
   departure: boolean;
@@ -173,6 +189,8 @@ export interface Plan {
   restate: boolean;
   needsCounter: boolean;
   needsContrast: boolean;
+  /** Song form: how loud each kind of part is (0 pp … 6 fff). Drex's choice in the plan, so every chorus is a peak and every verse drops back. */
+  partLevels?: Partial<Record<PartId, number>>;
 }
 
 export interface Theme {
@@ -227,6 +245,12 @@ export interface PhraseRecord {
   layers: LayerSummary[];
   mix: MixState;
   score: PhraseScore;
+  /** How the phrase closed, how its melody began and how it was joined to the phrase before: Drex's choices, kept as facts for later phrases. */
+  close?: string;
+  start?: string;
+  join?: string;
+  /** Notes to sound before this phrase's first bar line (t is negative, in beats). They are written into the end of the phrase before. */
+  leadIn?: PhraseScore['notes'];
 }
 
 export const PHRASE_BARS = 4;
@@ -235,14 +259,16 @@ export const PHRASE_BARS = 4;
 export const ARRIVAL_TEXT: Record<ArrivalId, string> = {
   swell: 'no break: the peak simply arrives at the top of a long crescendo, with the pulse carrying straight through. Continuous and gentle; for pieces that should never shock',
   hit: 'a hit: one accented blow lands on top of the same texture, which then carries on as before. A landmark, not a change of state',
-  open_wall: 'a held breath, then the wall: everything stops for an instant, then the pulse and figuration fall away and the whole ensemble opens into one sustained wall of sound, at full volume with the filter fully open. Awe, release, breaking the surface',
+  open_wall: 'a held breath, then the wall: everything stops for an instant, then the pulse and figuration fall away and the whole ensemble opens into one sustained wall of sound, at full volume with the filter fully open. Overwhelming force: for pieces that are vast, triumphant or tragic',
   broaden: 'the same held breath and wall of sound, and the tempo also broadens at the arrival, so the peak feels vast and slowed, time stretching',
+  bloom: 'a held breath, then a clearing: the motion stops and the music opens out, bright and still. Pulse, figuration and counter-lines fall away; the melody sings slow and high on one or two instruments over long held chords, the filter fully open, only a little louder than before. Awe through stillness and light, not through force: gentle, serene, the feeling of the piece settling in',
   drop: 'the drop: the beat thins to almost nothing for a bar, a breath of silence, then kick, bass and every layer slam back in together at full weight with the filter wide open',
 };
 /** Which arrivals each style offers: an orchestral wall loses the pulse, which is the opposite of what a beat wants at its peak. */
-export const arrivalsFor = (style: StyleId): ArrivalId[] => (style === 'beat_driven' ? ['swell', 'hit', 'drop'] : ['swell', 'hit', 'open_wall', 'broaden']);
+// A smooth lo-fi beat never slams: it is not offered the drop.
+export const arrivalsFor = (style: StyleId, groove?: GrooveId): ArrivalId[] => (groove === 'lofi' ? ['swell', 'hit'] : style === 'beat_driven' ? ['swell', 'hit', 'drop'] : ['swell', 'hit', 'bloom', 'open_wall', 'broaden']);
 /** The climax arrives after everything stops for a moment. */
-export const arrivesAfterBreath = (a: ArrivalId | undefined): boolean => a === 'open_wall' || a === 'broaden' || a === 'drop';
+export const arrivesAfterBreath = (a: ArrivalId | undefined): boolean => a === 'open_wall' || a === 'broaden' || a === 'drop' || a === 'bloom';
 export type ClimaxTheme = 'returns' | 'broadened' | 'continues';
 export const CLIMAX_THEME_TEXT: Record<ClimaxTheme, string> = {
   returns: 'the main theme returns whole and plainly recognisable: the moment everything before was leading to, a homecoming',
@@ -250,10 +276,21 @@ export const CLIMAX_THEME_TEXT: Record<ClimaxTheme, string> = {
   continues: 'no return: the climax is the furthest point of the development, the theme still in pieces',
 };
 export const ARRIVAL_LABEL: Record<ArrivalId, string> = {
-  swell: 'swell, no break', hit: 'a hit', open_wall: 'held breath, then the wall', broaden: 'held breath, wall, tempo broadens', drop: 'the drop',
+  swell: 'swell, no break', hit: 'a hit', open_wall: 'held breath, then the wall', broaden: 'held breath, wall, tempo broadens', bloom: 'held breath, then a still, bright clearing', drop: 'the drop',
 };
 /** The climax arrives as a wall of sound (with or without broadening). */
 export const isWall = (a: ArrivalId | undefined): boolean => a === 'open_wall' || a === 'broaden';
+
+/** Song parts of a beat-driven piece, as Drex reads them, and the phrase role each one works as. */
+export const PART_TEXT: Record<PartId, string> = {
+  intro: 'intro: sets up the groove and teases the hook, thin, before the song proper begins',
+  verse: 'verse: the groove settles and the texture stays lean; the hook is held back or only hinted at',
+  prechorus: 'pre-chorus: a short lift that builds toward the chorus, energy rising, something held back',
+  chorus: 'chorus: the hook, whole, in the fullest texture so far. The same music every time it comes back; what the listener waits for',
+  bridge: 'bridge or breakdown: a contrast: the beat thins or drops away and new material appears, so the last chorus lands fresh',
+  outro: 'outro: the groove winds down, layers leaving one by one',
+};
+export const PART_ROLE: Record<PartId, PhraseRole> = { intro: 'statement', verse: 'development', prechorus: 'development', chorus: 'return', bridge: 'departure', outro: 'coda' };
 
 /** What the picture is doing under one phrase. Only set when the engine is scoring a video. */
 export interface PictureCue {
@@ -289,12 +326,34 @@ export class Piece {
   picture: ((phrase: number) => PictureCue | null) | null = null;
   /** Lines added to every state before any music exists (the clip timeline, when scoring a video). */
   preludeLines: string[] = [];
+  /** How many bars the theme fills: Drex's choice when the theme is shaped. */
+  themeBars = 2;
 
   constructor(public prompt: string, public mood: Mood) {}
 
-  /** A theme fills two bars. */
+  /** The beats one theme fills. */
   get unitBeats(): number {
-    return 2 * this.rules.meter.beatsPerBar;
+    return this.themeBars * this.rules.meter.beatsPerBar;
+  }
+  /** Where the second half of a phrase's melody begins. A five-bar phrase is four bars with its close prolonged; a six-bar phrase says its first idea twice. */
+  segStart(phrase: number): number {
+    const bars = this.barsOf(phrase);
+    return (bars === 6 ? 4 : bars === 5 ? 2 : Math.ceil(bars / 2)) * this.rules.meter.beatsPerBar;
+  }
+  /** The chorus this phrase belongs to (beat-driven pieces): which chorus it is, and the phrase of the first chorus it repeats. */
+  chorusAt(phrase: number): { n: number; of: number; first: boolean; source: number | null; starts: boolean } | null {
+    if (!this.plan || phrase < 0 || phrase >= this.plan.totalPhrases) return null;
+    // Neighbouring chorus sections are one chorus.
+    const runs: { first: number; last: number }[] = [];
+    this.plan.sections.forEach((s, i, all) => {
+      if (s.part !== 'chorus') return;
+      if (i > 0 && all[i - 1].part === 'chorus') runs[runs.length - 1].last = s.last;
+      else runs.push({ first: s.first, last: s.last });
+    });
+    const n = runs.findIndex((r) => phrase >= r.first && phrase <= r.last);
+    if (n < 0) return null;
+    const span = runs[0].last - runs[0].first + 1;
+    return { n: n + 1, of: runs.length, first: n === 0, source: n === 0 ? null : runs[0].first + ((phrase - runs[n].first) % span), starts: phrase === runs[n].first };
   }
   /** Nominal phrase length in seconds at the base tempo. */
   get phraseSec(): number {
@@ -330,6 +389,8 @@ export class Piece {
   roleOf(phrase: number): PhraseRole {
     const s = this.sectionOf(phrase);
     if (phrase === this.plan.climaxPhrase) return 'climax';
+    // Every phrase of a chorus is the hook coming back.
+    if (s.part === 'chorus') return 'return';
     // Drex chose to state the theme twice at the start: the second statement comes back in a new light.
     if (this.plan.restate && phrase === 1 && s.index === 0 && s.last >= 1) return 'return';
     if (phrase === this.plan.totalPhrases - 1 && s.role !== 'departure') return 'coda';
@@ -374,7 +435,7 @@ export class Piece {
     const p = this.plan;
     const deps = p.sections.filter((s) => s.departure).map((s) => s.index + 1);
     return (
-      `PLAN    ${p.sections.length} sections, roles ${p.sections.map((s) => s.role).join(' / ')}; tension ${p.sections.map((s) => s.tension).join(' ')} (1 calm … 7 overwhelming); ` +
+      `PLAN    ${p.sections.length} sections, ${p.sections.some((s) => s.part) ? `parts ${p.sections.map((s) => s.part ?? s.role).join(' / ')}` : `roles ${p.sections.map((s) => s.role).join(' / ')}`}; tension ${p.sections.map((s) => s.tension).join(' ')} (1 calm … 7 overwhelming); ` +
       `departure = ${deps.length ? deps.join(', ') : 'none'}; climax = phrase ${p.climaxPhrase + 1} (section ${this.sectionOf(p.climaxPhrase).index + 1}), arriving as ${ARRIVAL_LABEL[p.climaxArrival ?? 'hit']}${p.climaxTheme === 'returns' ? ', with the main theme returning whole' : p.climaxTheme === 'broadened' ? ', with the main theme returning at half speed' : ''}; ending: ${this.rules.ending.replace(/_/g, ' ')}`
     );
   }
@@ -424,7 +485,7 @@ export class Piece {
       this.pieceLine(),
       pack.styleText(this.rules.style),
       this.planLine(),
-      `NOW     section ${s.index + 1}, phrase ${phrase + 1} of ${this.plan.totalPhrases}, role: ${this.roleOf(phrase)}, target tension ${this.tensionOf(phrase)}, key ${keyName(s.key)}`,
+      `NOW     section ${s.index + 1}, phrase ${phrase + 1} of ${this.plan.totalPhrases}, role: ${this.roleOf(phrase)}${s.part ? `, song part: ${s.part}${this.chorusAt(phrase) ? ` ${this.chorusAt(phrase)!.n} of ${this.chorusAt(phrase)!.of}` : ''}` : ''}, target tension ${this.tensionOf(phrase)}, key ${keyName(s.key)}`,
       this.themeLines(),
       this.lastFour(),
     ];

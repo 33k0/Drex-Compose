@@ -166,7 +166,8 @@ class Limiter {
   }
 }
 
-const API_URL = 'https://console.nace.ai/v1/systemone';
+/** Nace documents two hosts for the same API: console.nace.ai (the default) and drex.nace.ai. DREX_API_URL picks one. */
+export const apiUrl = (): string => (process.env.DREX_API_URL ?? '').trim() || 'https://console.nace.ai/v1/systemone';
 
 export function apiKey(): string | null {
   const k = (process.env.NACE_API_KEY ?? '').trim();
@@ -386,7 +387,7 @@ export class Gateway {
       if (this.aborted) throw new DrexError(0, 'aborted', 'Session stopped');
       let res: Response;
       try {
-        res = await fetch(API_URL, {
+        res = await fetch(apiUrl(), {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${apiKey()}`,

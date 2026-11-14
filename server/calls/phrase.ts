@@ -87,6 +87,8 @@ function opWeight(role: PhraseRole, seg: 1 | 2, id: string): number {
 
 /** What the plan has already decided about this phrase's first half: at the climax, the theme may return whole or broadened. */
 export function planFixed(piece: Piece, index: number): Picks {
+  // The chorus is the hook, whole.
+  if (piece.chorusAt(index)) return { seg1_source: 'A', seg1_op1: 'none' };
   if (index !== piece.plan.climaxPhrase) return {};
   if (piece.plan.climaxTheme === 'returns') return { seg1_source: 'A', seg1_op1: 'none' };
   if (piece.plan.climaxTheme === 'broadened') return { seg1_source: 'A', seg1_op1: 'augmentation' };
@@ -112,7 +114,7 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
   const sectionEnd = index === section.last;
   const finalPhrase = index === piece.plan.totalPhrases - 1;
   const fixed = planFixed(piece, index);
-  const wallHere = index === piece.plan.climaxPhrase && isWall(piece.plan.climaxArrival);
+  const wallHere = index === piece.plan.climaxPhrase && (isWall(piece.plan.climaxArrival) || piece.plan.climaxArrival === 'bloom');
   const wallNext = index === piece.plan.climaxPhrase - 1 && arrivesAfterBreath(piece.plan.climaxArrival);
 
   const sources = (seg: 1 | 2): ChoiceOption[] => {
@@ -151,7 +153,7 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
   };
 
   const questions: Question[] = [
-    { id: 'seg1_source', type: 'choice', label: 'First half: material', instructions: 'A phrase has two halves of two bars. What material should the first half be built from?', options: sources(1) },
+    { id: 'seg1_source', type: 'choice', label: 'First half: material', instructions: 'A phrase has two halves. What material should the first half be built from?', options: sources(1) },
     { id: 'seg1_op1', type: 'choice', label: 'First half: transformation', instructions: 'Which transformation should be applied to the first half\'s material?', options: ops(1, false) },
     { id: 'seg1_op2', type: 'choice', label: 'First half: second transformation', instructions: 'Should a second transformation be applied on top, in the first half?', options: ops(1, true) },
     { id: 'seg2_source', type: 'choice', label: 'Second half: material', instructions: 'What material should the second half be built from?', options: sources(2) },
@@ -216,9 +218,31 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
       ],
     });
   }
+  // How long the phrase is. Loop music stays square, and a phrase fitted to picture already has its length.
+  if (lengthAsked(piece)) {
+    const recent = piece.phrases.slice(-4).map((ph) => ph.score.bars);
+    let sameRun = 0;
+    for (let i = recent.length - 1; i >= 0 && recent[i] === 4; i--) sameRun++;
+    const text: Record<number, [string, number]> = {
+      2: ['two bars: half the usual length. One idea said once, then straight on: urgency, an interjection, a quick answer', -0.4 + (t >= 5 ? 0.5 : 0)],
+      3: ['three bars: a contracted phrase. The close comes a bar early, so the next phrase arrives sooner than expected: pressing forward', 0.2 + (t >= 4.5 ? 0.5 : 0)],
+      4: ['four bars: the regular length. Balanced and expected', 1.7 - 0.45 * sameRun],
+      5: ['five bars: an extended phrase. The last note is held through an extra bar: the close lingers, with time to breathe', 0.4 + (sectionEnd ? 0.7 : 0) + (t <= 3 ? 0.3 : 0)],
+      6: ['six bars: a long-breathed phrase. Its first idea is said twice before the answer comes: insistence, a broad span', 0.1 + (role === 'climax' ? 0.6 : 0)],
+    };
+    const min = Math.max(2, piece.themeBars, fixed.seg1_source ? 4 : 2, index === 0 ? Math.min(4, piece.themeBars + 1) : 2);
+    questions.push({
+      id: 'phrase_length', type: 'choice', label: 'Phrase length',
+      instructions: `How many bars long should this phrase be? The theme fills ${piece.themeBars} bar${piece.themeBars === 1 ? '' : 's'}.${recent.length ? ` The last ${recent.length === 1 ? 'phrase was' : `${recent.length} phrases were`} ${recent.join(', ')} bars long.` : ''}`,
+      options: [2, 3, 4, 5, 6].filter((b) => b >= min).map((b) => opt(String(b), `${b} bars`, text[b][0], text[b][1])),
+    });
+  }
   // Whatever the plan already fixed is not asked again.
   return questions.filter((qn) => !(qn.id in fixed));
 }
+
+/** Drex chooses each phrase's length, except in loop music (which stays square) and when the picture has already set it. */
+const lengthAsked = (piece: Piece) => piece.rules.style !== 'beat_driven' && !piece.picture;
 
 function directionFrom(p: Picks): Direction {
   const seg = (n: 1 | 2): SegmentChoice => {
@@ -249,9 +273,10 @@ function sliceLine(line: Line, from: number, to: number): Line {
 }
 
 export function buildLine(piece: Piece, dir: Direction, index: number): { line: Line; lineage: string; depth: number; intact: boolean; truncated: boolean } {
-  const unit = piece.halfOf(index);
+  const unit = piece.segStart(index);
   const whole = piece.beatsOf(index);
-  const prevHalf = piece.phrases.length ? piece.halfOf(piece.phrases[piece.phrases.length - 1].index) : unit;
+  const bars = piece.barsOf(index);
+  const prevHalf = piece.phrases.length ? piece.segStart(piece.phrases[piece.phrases.length - 1].index) : unit;
   const prevWhole = piece.phrases.length ? piece.beatsOf(piece.phrases[piece.phrases.length - 1].index) : whole;
   const ctx = { grid: piece.grid };
   const last = piece.phrases[piece.phrases.length - 1];
@@ -274,6 +299,9 @@ export function buildLine(piece: Piece, dir: Direction, index: number): { line: 
     seg1 = truncate(seg1, whole, piece.grid);
     truncated = true;
   }
+  // A six-bar phrase says its first idea twice before the answer.
+  const twice = bars === 6 && lineLength(seg1) <= unit / 2 && pitched(seg1).length > 0;
+  if (twice) seg1 = [...padTo(seg1, unit / 2), ...seg1];
   const len1 = lineLength(seg1);
   const start2 = Math.max(unit, Math.ceil(len1 - 1e-6));
   const room = q(whole - start2);
@@ -290,12 +318,18 @@ export function buildLine(piece: Piece, dir: Direction, index: number): { line: 
   let line = padTo(seg1, start2);
   if (seg2Used) line = [...line, ...seg2];
   line = mergeRests(padTo(line, whole));
+  // A five-bar phrase holds its last note through the extra bar.
+  if (bars === 5 && line.length >= 2 && line[line.length - 1].deg === null && line[line.length - 2].deg !== null) {
+    const rest = line.pop()!;
+    line[line.length - 1] = { ...line[line.length - 1], dur: q(line[line.length - 1].dur + rest.dur) };
+  }
 
   const part = (name: string, ops: string[]) => `${name} ${describeOps(ops)}`.replace(' intact', ops.length ? '' : ' intact');
-  let lineage = part(m1.name, dir.seg1.ops);
+  let lineage = part(m1.name, dir.seg1.ops) + (twice ? ', said twice' : '');
   if (seg2Used) lineage += ` + ${part(m2.name === 'first half' ? 'the same again' : m2.name, dir.seg2.ops)}`;
   const texture = TEXTURE_OPS.filter((x) => dir.flags[x.id]).map((x) => x.phrase);
   if (texture.length) lineage += `; ${texture.join(', ')}`;
+  if (bars !== 4) lineage += `; ${bars} bars${bars === 5 ? ', the close held' : ''}`;
 
   const intact = (dir.seg1.source === 'A' || dir.seg1.source === 'first_half') && dir.seg1.ops.length === 0;
   const depth = Math.max(m1.depth + dir.seg1.ops.length, seg2Used ? (m2.name === 'first half' ? m1.depth + dir.seg1.ops.length : m2.depth) + dir.seg2.ops.length : 0);
@@ -596,6 +630,9 @@ export async function draftRound(ctx: Ctx, index: number, round: number): Promis
     state: piece.state('phrase_direction', index),
     questions: directionQuestions(ctx, index), picking: 'sampled', draws: PHRASE_DRAFTS,
   });
+  // The phrase length is one decision for all drafts: Drex's most probable answer.
+  const lengths = dirAns.probabilities.phrase_length;
+  if (lengths) piece.phraseBars.set(index, Number(Object.entries(lengths).sort((a, b) => b[1] - a[1])[0][0]));
   const letters = 'abcdefgh';
   const fixed = planFixed(piece, index);
   const drafts: Draft[] = dirAns.picks.map((p, i) => {
@@ -637,7 +674,7 @@ export async function judgeDrafts(ctx: Ctx, index: number, round: number, drafts
   drafts.forEach((d, i) => {
     // In a departure each half is measured on its own: two statements of a contrasting idea must not
     // count as "near the theme" just because the join between them happens to trace the theme's shape.
-    const half = piece.halfOf(index);
+    const half = piece.segStart(index);
     const halves = [sliceLine(d.line, 0, half), sliceLine(d.line, half, piece.beatsOf(index))].filter((h) => pitched(h).length >= 2);
     const kept = role === 'departure' && halves.length
       ? halves.map((h) => shareKept(main.line, h)).sort((a, b) => b.overall - a.overall)[0]
@@ -678,7 +715,7 @@ export async function judgeDrafts(ctx: Ctx, index: number, round: number, drafts
       if (!d.intact) { s -= 1; failure = 'aimless'; }
     } else if (role === 'return') {
       if (!d.intact) { s -= 1.2; failure = 'aimless'; } else s += 1.5;
-      if (d.intact && !newHarmony && !d.direction.flags.handoff) { s -= 2.2; failure = 'stale_return'; } else if (d.intact) s += 0.7;
+      if (d.intact && !newHarmony && !d.direction.flags.handoff && !piece.chorusAt(index)) { s -= 2.2; failure = 'stale_return'; } else if (d.intact) s += 0.7;
     } else {
       const rel = Math.max(kept.overall, chainRelated ? 0.42 : 0);
       if (rel < DRIFT_LEVEL) { s -= 2; failure = 'drift'; } else s += 1 + (kept.overall > 0.35 && kept.overall < 0.92 ? 0.7 : 0);
@@ -707,7 +744,9 @@ export async function judgeDrafts(ctx: Ctx, index: number, round: number, drafts
       ? 'This is a development phrase in a loop-based style. It must stay related to the theme; an exact repeat of an earlier phrase is right here, because the change comes from the drums, bass, layers and filter around it. Reject drift (no longer related).'
       : 'This is a development phrase: it must be related to the theme AND new. Reject drift (no longer related) and copies (too close to any of the last four phrases).',
     departure: 'This is a planned departure: the test flips. The phrase must CONTRAST with the main theme while fitting the key and mood.',
-    return: 'The theme returns here. A theme that comes back intact must have new harmony or new instruments.',
+    return: piece.chorusAt(index)
+      ? 'This phrase is the chorus: the hook must be whole and plainly recognisable. Hearing it again is the point; prefer the draft whose chords and second half serve the hook best.'
+      : 'The theme returns here. A theme that comes back intact must have new harmony or new instruments.',
     climax: themeBack
       ? `This is the climax, and the plan brings the main theme back here ${piece.plan.climaxTheme === 'broadened' ? 'at half speed' : 'whole'}: hearing the theme again at full intensity is the point of the moment, not a copy.`
       : 'This is the climax: related to the theme, at its most intense, and not a copy of the last four phrases.',

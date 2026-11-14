@@ -4,10 +4,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  ArrivalId, EndingId, FormId, GrooveId, HarmonicLanguage, InstrumentId, KeyPlanId, MeterId, ModeId, PhraseRole, PlanView, RulesView,
+  ArrivalId, EndingId, FormId, GrooveId, HarmonicLanguage, InstrumentId, KeyPlanId, MeterId, ModeId, PartId, PhraseRole, PlanView, RulesView,
   SoundWorld, StyleId,
 } from '../../shared/types.ts';
 import { TENSION_LEVELS, type Ctx } from '../context.ts';
+import { DYNAMIC_NAMES } from '../../shared/types.ts';
 import { promptJitter } from '../core/mood.ts';
 import { clamp } from '../core/rng.ts';
 import {
@@ -15,7 +16,7 @@ import {
 } from '../core/theory.ts';
 import type { ChoiceOption, Question } from '../gateway/gateway.ts';
 import { pack, ROOT } from '../pack.ts';
-import { ARRIVAL_LABEL, ARRIVAL_TEXT, arrivalsFor, CLIMAX_THEME_TEXT, GROOVES, availableInstruments, INSTRUMENTS, PHRASE_BARS, ROLE_INSTRUMENTS, type ClimaxTheme, type Plan, type Section } from '../piece.ts';
+import { ARRIVAL_LABEL, ARRIVAL_TEXT, arrivalsFor, CLIMAX_THEME_TEXT, GROOVES, availableInstruments, INSTRUMENTS, offeredTo, PART_ROLE, PART_TEXT, PHRASE_BARS, ROLE_INSTRUMENTS, type ClimaxTheme, type Plan, type Section } from '../piece.ts';
 
 const opt = (key: string, label: string, criteria: string, prior = 0): ChoiceOption => ({ key, label, criteria, prior });
 
@@ -42,7 +43,7 @@ export function planView(ctx: Ctx, revised = false): PlanView {
   const { plan } = ctx.piece;
   return {
     sections: plan.sections.map((s) => ({
-      index: s.index, role: s.role, tension: s.tension, departure: s.departure, phrases: [s.first, s.last], keyName: keyName(s.key),
+      index: s.index, role: s.role, ...(s.part ? { part: s.part } : {}), tension: s.tension, departure: s.departure, phrases: [s.first, s.last], keyName: keyName(s.key),
       startSec: s.startSec, endSec: s.endSec,
     })),
     totalPhrases: plan.totalPhrases,
@@ -80,7 +81,7 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
     boom_bap: (1 - m.energy) * 1.2 + m.darkness * 0.4,
     trap: m.darkness * 1.6 + m.electronic * 0.8,
     funk: m.playful * 1.8 + Math.max(0, m.valence) * 0.8,
-    pop: 0.8 + Math.max(0, m.valence) * 0.8,
+    lofi: 0.9 + (1 - m.energy) * 1.2,
   };
   const grooveQ: Question = {
     id: 'groove', type: 'choice', label: 'Groove (beat-driven only)',
@@ -264,9 +265,9 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
   const base: Record<string, number> = orch
     ? { piano: 0.95, violins: 0.9, violins2: 0.82, violas: 0.86, celli: 0.9, basses: 0.86, horn: 0.6, flute: 0.5, oboe: 0.45, clarinet: 0.35, harp: 0.62, timpani: 0.42 + m.size * 0.3, cymbal: 0.4 + m.size * 0.3, bass_drum: 0.35 + m.size * 0.3, solo_violin: 0.35 + (1 - m.size) * 0.3, noise: 0.25 + m.water * 0.6, pad: 0.12, celesta: 0.2, vibraphone: 0.15, tam_tam: 0.2 + m.darkness * 0.3 }
     : beat
-      ? { drumkit: 0.95, kick808: 0.8, sub: 0.95, pad: 0.88, pluck: 0.9, piano: 0.5, violins: 0.35, violas: 0.2, celli: 0.3, noise: 0.5, vibraphone: 0.3, cymbal: 0.3 }
+      ? { drumkit: 0.95, kick808: 0.8, sub: 0.9, pad: 0.88, pluck: 0.85, piano: 0.45, noise: 0.4, keys: 0.75, lead: 0.7, supersaw: 0.55 + m.energy * 0.3, synth_bass: 0.7, bell: 0.55, brass: 0.45 }
       : { flute: 0.82, clarinet: 0.8, oboe: 0.58, violins: 0.85, violins2: 0.6, violas: 0.62, celli: 0.66, basses: 0.55, piano: 0.6, harp: 0.5, pluck: 0.35, glockenspiel: 0.6, celesta: 0.55, drumkit: 0.42 + m.energy * 0.4, timpani: 0.3, horn: 0.3, cymbal: 0.25, vibraphone: 0.3 };
-  const avail = [...availableInstruments()];
+  const avail = [...availableInstruments()].filter((id) => offeredTo(piece.rules.style, id));
   const paletteQs: Question[] = avail.map((id) => ({
     id: `use_${id}`, type: 'noul', label: INSTRUMENTS[id].name,
     // The palette is a pool, not a line-up: asked as "will it have a real job" Drex kept it small and the same few instruments played throughout.
@@ -289,6 +290,16 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
         .filter((id) => avail.includes(id))
         .sort((a, b) => palAns.values[`use_${b}`] - palAns.values[`use_${a}`])[0];
       if (best) palette.push(best);
+    }
+  }
+  // A song needs something its chorus can add that its verse held back. If Drex's answers leave a beat-driven
+  // piece with only the core synths and drums, its two most probable colour instruments join the pool.
+  if (beat) {
+    const colour = (id: string) => !['sub', 'pad', 'pluck', 'kick808', 'noise', 'drumkit'].includes(id) && [...ROLE_INSTRUMENTS.melody, ...ROLE_INSTRUMENTS.counter, ...ROLE_INSTRUMENTS.inner].includes(id as InstrumentId);
+    const missing = 2 - palette.filter(colour).length;
+    if (missing > 0) {
+      palette.push(...(avail.filter((id) => colour(id) && !palette.includes(id as InstrumentId) && palAns.values[`use_${id}`] >= 0.15)
+        .sort((a, b) => palAns.values[`use_${b}`] - palAns.values[`use_${a}`]).slice(0, missing) as InstrumentId[]));
     }
   }
   piece.rules.palette = palette;
@@ -362,6 +373,43 @@ export function applyKeyPlan(sections: Section[], home: Key, plan: KeyPlanId, cl
   }
 }
 
+/** The song forms a beat-driven piece can take, laid out over `n` sections of eight bars. */
+const SONG_FORMS: Record<string, { label: string; text: string }> = {
+  verse_chorus: { label: 'verse and chorus', text: 'verse and chorus: verses alternate with a chorus that returns two or three times, a bridge before the last one. The standard pop and rock song' },
+  prechorus: { label: 'verse, pre-chorus, chorus', text: 'verse, pre-chorus, chorus: each chorus is set up by a short lift, so it lands harder. Modern pop and dance-pop' },
+  hook_first: { label: 'hook first', text: 'hook first: the piece opens straight on the chorus hook, then trades verses and hooks. Hip-hop and rap beats' },
+  one_groove: { label: 'one groove', text: 'one groove: no chorus and no hook that returns; a single groove that builds slowly, with one breakdown for contrast. Minimal, hypnotic tracks and background beats' },
+};
+export function songLayout(form: string, n: number): PartId[] {
+  if (form === 'one_groove') {
+    const out: PartId[] = Array.from({ length: n }, () => 'verse');
+    out[0] = 'intro';
+    out[n - 1] = 'outro';
+    if (n >= 5) out[Math.round((n - 1) * 0.62)] = 'bridge';
+    return out;
+  }
+  // Verse-and-chorus forms: up to three chorus blocks, the last set up by a bridge. Spare sections
+  // lengthen the first verse, double the last chorus, then lengthen the second verse.
+  const pre = form === 'prechorus';
+  const head: PartId[] = [form === 'hook_first' ? 'chorus' : 'intro'];
+  const m = n - 2;
+  if (m <= 0) return [head[0], 'outro'].slice(0, n) as PartId[];
+  const size = pre ? 3 : 2;
+  const count = m < size + 2 ? 1 : m < size * 2 + 2 ? 2 : 3;
+  const blocks: PartId[][] = [];
+  for (let i = 0; i < count; i++) blocks.push(i === count - 1 && count >= 2 ? ['bridge', 'chorus'] : pre ? ['verse', 'prechorus', 'chorus'] : ['verse', 'chorus']);
+  if (m === 1) blocks[0] = ['chorus'];
+  if (pre && m === 2) blocks[0] = ['verse', 'chorus'];
+  let spare = m - blocks.reduce((a, b) => a + b.length, 0);
+  const grow: (() => void)[] = [
+    () => blocks[0].unshift('verse'),
+    () => blocks[blocks.length - 1].push('chorus'),
+    () => (blocks.length >= 3 ? blocks[1] : blocks[0]).unshift('verse'),
+  ];
+  for (let i = 0; spare > 0; i++, spare--) grow[i % grow.length]();
+  return [...head, ...blocks.flat(), 'outro'];
+}
+
 /** Tempo of the climax phrase when Drex chooses a broadened arrival, as a share of the base tempo (proposed; tune by ear). */
 export const BROADEN = 0.85;
 
@@ -370,30 +418,50 @@ export async function runPlan(ctx: Ctx): Promise<void> {
   const { rules, mood } = piece;
   const phraseSec = (PHRASE_BARS * rules.meter.beatsPerBar * 60) / rules.bpm;
   const total = Math.max(4, Math.round(rules.lengthSec / phraseSec));
-  const n = clamp(Math.round(total / 3), 3, 8);
+  // A beat-driven piece is a song: sections of eight bars (two phrases), each one a song part.
+  const song = rules.style === 'beat_driven';
+  const n = song ? clamp(Math.round(total / 2), 4, 12) : clamp(Math.round(total / 3), 3, 8);
   const bounds = Array.from({ length: n + 1 }, (_x, i) => Math.round((i * total) / n));
   const tpl = template(rules.form, n);
   const peak = 4.6 + mood.size * 2.6 + mood.energy * 0.6;
 
+  // The song form is one decision, so the parts fit together; asked part by part, each answer would ignore the others.
+  let parts: PartId[] | null = null;
+  if (song) {
+    const g = rules.groove;
+    const formPrior: Record<string, number> = { verse_chorus: 1, prechorus: g === 'house' ? 1.3 : 0.4, hook_first: g === 'trap' || g === 'boom_bap' ? 1.7 : 0.3, one_groove: g === 'lofi' ? 1.8 : g === 'funk' ? 1.2 : 0.2 };
+    const formAns = await gw.ask({
+      callType: 'plan', title: 'Plan: song form',
+      state: piece.preludeState('plan', [`FORM    ${total} phrases of ${PHRASE_BARS} bars in ${n} sections of about eight bars`]),
+      questions: [{
+        id: 'song_form', type: 'choice', label: 'Song form',
+        instructions: `The piece is "${piece.prompt}". Which song form should it take? Each option lists the ${n} sections in order.`,
+        options: Object.entries(SONG_FORMS).map(([k, f]) => opt(k, f.label, `${f.text}. Here: ${songLayout(k, n).join(', ')}.`, formPrior[k])),
+      }],
+      picking: 'top',
+    });
+    parts = songLayout(formAns.picks[0].song_form, n);
+  }
+
   const questions: Question[] = [];
   for (let i = 0; i < n; i++) {
-    const span = `section ${i + 1} of ${n} (phrases ${bounds[i] + 1}-${bounds[i + 1]}, about ${Math.round((bounds[i + 1] - bounds[i]) * phraseSec)} s)`;
+    const span = `section ${i + 1} of ${n} (${parts ? `${parts[i]}, ` : ''}phrases ${bounds[i] + 1}-${bounds[i + 1]}, about ${Math.round((bounds[i + 1] - bounds[i]) * phraseSec)} s)`;
     // The first section states the theme, so it is not asked. The last section closes the piece: it
     // winds down or brings the theme home, and cannot leave on new material. Middle sections do the rest.
     const roleOptions: PhraseRole[] = i === n - 1 ? ['coda', 'return'] : ['development', 'departure', 'return', 'climax'];
-    if (i > 0) questions.push({
+    if (i > 0 && !parts) questions.push({
       id: `role_${i + 1}`, type: 'choice', label: `Section ${i + 1} role`,
       instructions: `What is the role of ${span}?${i === n - 1 ? ' It is the last section of the piece.' : ''}`,
       options: roleOptions.map((r) => opt(r, r, ROLE_TEXT[r], r === tpl.roles[i] ? 2.2 : r === 'development' || r === 'coda' ? 0.4 : 0)),
     });
     questions.push({
       id: `tension_${i + 1}`, type: 'score', label: `Section ${i + 1} tension`,
-      instructions: `How much tension should ${span} carry? Plan peaks and lulls deliberately across the piece.`,
+      instructions: `How much tension should ${span} carry? Plan peaks and lulls deliberately across the piece.${parts ? ` ${PART_TEXT[parts[i]]}.` : ''}`,
       levels: TENSION_LEVELS,
       prior: clamp((tpl.tension[i] / 7) * peak, 1, 7) - 1,
       spread: 0.6,
     });
-    if (i > 0 && i < n - 1) questions.push({
+    if (i > 0 && i < n - 1 && !parts) questions.push({
       id: `departure_${i + 1}`, type: 'noul', label: `Section ${i + 1} leaves the theme`,
       instructions: `Should ${span} leave the theme on purpose, for contrast?`,
       yes: 'A planned departure: contrasting material that still fits the key and mood.',
@@ -403,7 +471,11 @@ export async function runPlan(ctx: Ctx): Promise<void> {
   }
   const tplClimax = tpl.tension.indexOf(Math.max(...tpl.tension));
   const climaxAt = (bounds[tplClimax] + bounds[tplClimax + 1]) / 2 / total;
-  questions.push({
+  // In a song with a chorus the peak is the last chorus, so its position is not asked.
+  // (Neighbouring chorus sections are one chorus: the last chorus starts where its run of sections starts.)
+  let lastChorus = parts ? parts.lastIndexOf('chorus') : -1;
+  while (parts && lastChorus > 0 && parts[lastChorus - 1] === 'chorus') lastChorus--;
+  if (lastChorus < 0) questions.push({
     id: 'climax_position', type: 'choice', label: 'Climax position',
     instructions: 'How far through the piece should the climax fall?',
     options: [50, 60, 70, 80, 90].map((pc) => opt(`at_${pc}`, `${pc}%`, `${pc}% of the way through`, -(((pc / 100 - climaxAt) / 0.09) ** 2))),
@@ -414,13 +486,14 @@ export async function runPlan(ctx: Ctx): Promise<void> {
     hit: orchStyle ? 0.2 : 1.2,
     open_wall: (orchStyle ? 0.9 : 0) + mood.size * 1.2 + mood.water * 0.5,
     broaden: mood.size * 1.1 + mood.darkness * 0.8 - 0.6,
+    bloom: (orchStyle ? 0.8 : 0.3) + (1 - mood.energy) * 0.9 + (1 - mood.size) * 0.6,
     drop: 1.6,
   };
   questions.push({
     id: 'climax_arrival', type: 'choice', label: 'How the climax arrives',
     // The prompt is quoted here because it is a tiny share of the state: measured live, that is what lets it steer this choice.
     instructions: `The piece is "${piece.prompt}". How should its climax arrive?`,
-    options: arrivalsFor(rules.style).map((a) => opt(a, ARRIVAL_LABEL[a], ARRIVAL_TEXT[a], arrivalPrior[a])),
+    options: arrivalsFor(rules.style, rules.groove).map((a) => opt(a, ARRIVAL_LABEL[a], ARRIVAL_TEXT[a], arrivalPrior[a])),
   });
   questions.push({
     id: 'climax_theme', type: 'choice', label: 'The melody at the climax',
@@ -445,6 +518,18 @@ export async function runPlan(ctx: Ctx): Promise<void> {
     prior: tpl.roles.includes('departure') ? 0.85 : 0.2,
   });
 
+  // A song moves in waves, not up a staircase: each kind of part has its own level, set once, so every
+  // chorus is a peak and every verse drops back. Asked as a choice: a score answer drifts to the middle.
+  const kinds = parts ? [...new Set(parts)] : [];
+  const levelPrior: Record<PartId, number> = { intro: 1, verse: 2, prechorus: 3, chorus: 5, bridge: 1, outro: 1 };
+  for (const k of kinds) {
+    questions.push({
+      id: `level_${k}`, type: 'choice', label: `How loud the ${k} is`,
+      instructions: `The piece is "${piece.prompt}". How loud should every ${k} section be? ${PART_TEXT[k]}. A song moves in waves: each chorus is a peak the listener can feel, and the parts between drop well back so the next chorus hits again.`,
+      options: DYNAMIC_NAMES.map((name, i) => opt(String(i), name, `${name}: ${['very soft', 'soft', 'moderately soft', 'moderately loud', 'loud', 'very loud', 'as loud as the piece gets'][i]}`, -Math.abs(i - levelPrior[k]) * 1.2)),
+    });
+  }
+
   const ans = await gw.ask({
     callType: 'plan', title: 'Plan: sections, tension curve, departures, climax',
     state: piece.preludeState('plan', [`FORM    ${rules.form.replace(/_/g, ' ')}; ${total} phrases of ${PHRASE_BARS} bars (${phraseSec.toFixed(1)} s each) in ${n} sections; key plan: ${rules.keyPlan.replace(/_/g, ' ')}; ending: ${rules.ending.replace(/_/g, ' ')}`]),
@@ -452,18 +537,19 @@ export async function runPlan(ctx: Ctx): Promise<void> {
   });
   const p = ans.picks[0];
 
-  const climaxPhrase = clamp(Math.round((Number(p.climax_position.slice(3)) / 100) * total) - 1, 1, total - 1);
+  const climaxPhrase = lastChorus >= 0 ? bounds[lastChorus] : clamp(Math.round((Number(p.climax_position.slice(3)) / 100) * total) - 1, 1, total - 1);
   const sections: Section[] = [];
   for (let i = 0; i < n; i++) {
     let role = (p[`role_${i + 1}`] ?? 'statement') as PhraseRole;
-    const departure = i > 0 && i < n - 1 && ((ans.values[`departure_${i + 1}`] ?? 0) >= 0.5 || role === 'departure');
+    if (parts) role = PART_ROLE[parts[i]];
+    const departure = parts ? parts[i] === 'bridge' : i > 0 && i < n - 1 && ((ans.values[`departure_${i + 1}`] ?? 0) >= 0.5 || role === 'departure');
     // The theme has to be stated before it can be developed: the first section states it.
     if (i === 0) role = 'statement';
     else if (departure) role = 'departure';
-    sections.push({ index: i, role, tension: Number(p[`tension_${i + 1}`]) + 1, departure, first: bounds[i], last: bounds[i + 1] - 1, key: rules.key });
+    sections.push({ index: i, role, ...(parts ? { part: parts[i] } : {}), tension: Number(p[`tension_${i + 1}`]) + 1, departure, first: bounds[i], last: bounds[i + 1] - 1, key: rules.key });
   }
   const climaxSection = sections.find((s) => climaxPhrase >= s.first && climaxPhrase <= s.last)!;
-  if (climaxSection.index !== 0 && !climaxSection.departure) climaxSection.role = 'climax';
+  if (climaxSection.index !== 0 && !climaxSection.departure && !parts) climaxSection.role = 'climax';
   applyKeyPlan(sections, rules.key, rules.keyPlan, climaxSection.index);
 
   const plan: Plan = {
@@ -473,6 +559,7 @@ export async function runPlan(ctx: Ctx): Promise<void> {
     restate: ans.values.restate_theme >= 0.5,
     needsCounter: ans.values.counter_theme >= 0.5,
     needsContrast: ans.values.contrast_theme >= 0.5 || sections.some((s) => s.departure),
+    ...(kinds.length ? { partLevels: Object.fromEntries(kinds.map((k) => [k, Number(p[`level_${k}`])])) } : {}),
   };
   piece.plan = plan;
   // A broadened arrival: the climax phrase itself is played slower.

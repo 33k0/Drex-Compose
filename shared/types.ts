@@ -5,7 +5,7 @@
 
 export type StyleId = 'bittersweet_orchestral' | 'beat_driven' | 'playful';
 /** Groove family of a beat-driven piece: Drex picks one at setup. */
-export type GrooveId = 'house' | 'boom_bap' | 'trap' | 'funk' | 'pop';
+export type GrooveId = 'lofi' | 'boom_bap' | 'trap' | 'funk' | 'house';
 export type MeterId = '4/4' | '3/4' | '6/8' | '12/8' | '5/4' | '7/8';
 export type ModeId =
   | 'major' | 'natural_minor' | 'harmonic_minor' | 'melodic_minor'
@@ -16,20 +16,23 @@ export type FormId = 'arch' | 'slow_build' | 'theme_development_return' | 'throu
 export type EndingId = 'resolved' | 'suspended' | 'fade' | 'sudden_stop';
 export type KeyPlanId = 'none' | 'relative' | 'step_up_at_climax' | 'distant_dark_turn';
 /** How the climax arrives: Drex picks one in the plan call. */
-export type ArrivalId = 'swell' | 'hit' | 'open_wall' | 'broaden' | 'drop';
+export type ArrivalId = 'swell' | 'hit' | 'open_wall' | 'broaden' | 'bloom' | 'drop';
+/** Song parts of a beat-driven piece (verse and chorus form). */
+export type PartId = 'intro' | 'verse' | 'prechorus' | 'chorus' | 'bridge' | 'outro';
 export type PhraseRole = 'statement' | 'development' | 'departure' | 'return' | 'climax' | 'coda';
 
 export type LayerRole =
   | 'melody' | 'counter' | 'inner' | 'bass' | 'pedal'
   | 'figuration' | 'texture' | 'pulse' | 'accents';
 
-/** Sampled instruments come from assets/samples/manifest.json; the last five are Tone.js synths. */
+/** Sampled instruments come from assets/samples/manifest.json; the last two rows are Tone.js synths. */
 export type InstrumentId =
   | 'piano' | 'violins' | 'violins2' | 'violas' | 'celli' | 'basses' | 'solo_violin'
   | 'flute' | 'oboe' | 'clarinet' | 'horn' | 'harp'
   | 'timpani' | 'bass_drum' | 'cymbal' | 'drumkit'
   | 'celesta' | 'glockenspiel' | 'vibraphone' | 'tam_tam'
-  | 'sub' | 'pad' | 'pluck' | 'kick808' | 'noise';
+  | 'sub' | 'pad' | 'pluck' | 'kick808' | 'noise'
+  | 'keys' | 'lead' | 'supersaw' | 'synth_bass' | 'bell' | 'brass';
 
 export type Articulation =
   | 'sustain' | 'staccato' | 'spiccato' | 'tremolo' | 'pizzicato' | 'hit' | 'roll';
@@ -217,6 +220,8 @@ export interface RulesView {
 export interface SectionView {
   index: number;
   role: PhraseRole;
+  /** Beat-driven pieces: the song part this section is. */
+  part?: PartId;
   /** 1..7 */
   tension: number;
   departure: boolean;

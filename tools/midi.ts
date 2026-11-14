@@ -7,6 +7,7 @@ import { beatToSec, phraseSeconds } from '../shared/types.ts';
 const PROGRAM: Partial<Record<InstrumentId, number>> = {
   piano: 0, violins: 48, violins2: 48, violas: 48, celli: 48, basses: 48, solo_violin: 40, flute: 73, oboe: 68, clarinet: 71,
   horn: 60, harp: 46, timpani: 47, celesta: 8, glockenspiel: 9, vibraphone: 11, sub: 38, pad: 89, pluck: 84,
+  keys: 4, lead: 81, supersaw: 90, synth_bass: 38, bell: 98, brass: 62,
 };
 const DRUM_NOTE: Partial<Record<InstrumentId, (midi: number) => number>> = {
   drumkit: (m) => m, kick808: () => 36, bass_drum: () => 35, cymbal: () => 49, tam_tam: () => 52,

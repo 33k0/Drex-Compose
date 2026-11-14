@@ -62,6 +62,8 @@ export function rhythmFor(cell: Cell, count: number, unit: number): number[] {
 // ───────────────────────────── Shape ─────────────────────────────
 
 interface Shape {
+  /** Bars the theme fills. */
+  bars: number;
   count: number;
   contour: string;
   cell: Cell;
@@ -111,7 +113,18 @@ function shapeQuestions(ctx: Ctx, contrastWith?: Theme): Question[] {
     even: (1 - m.energy) * 0.8, long_short: 0.9, short_short_long: 0.5 + m.playful, syncopated: (beat ? 1.6 : 0) + m.energy * 0.6 - 0.3,
     long_then_run: 0.4, lilt: 1 + (orch ? 0.3 : 0), flowing: m.energy * 0.9 - 0.2, held_then_lilt: orch ? 1.1 : 0.3, broad_then_quick: 0.7,
   };
+  const barText: Record<number, [string, number]> = {
+    1: ['one bar: a short motif, a cell that can be repeated, answered and broken up', beat ? 1.2 : 0.5],
+    2: ['two bars: a sung phrase, the classic length', 1.2],
+    3: ['three bars: a long-breathed line that does not fall into squares', beat ? -2 : 0.3],
+  };
   return [
+    // Only the main theme chooses its length; later themes match it.
+    ...(contrastWith ? [] : [{
+      id: 'bars', type: 'choice' as const, label: 'Theme length in bars',
+      instructions: 'How many bars should the theme fill?',
+      options: (beat ? [1, 2] : [1, 2, 3]).map((b) => opt(`b${b}`, `${b} bar${b === 1 ? '' : 's'}`, barText[b][0], barText[b][1])),
+    }]),
     {
       id: 'length', type: 'choice', label: 'Theme length',
       instructions: 'How many notes should the theme have? A theme must be short enough to remember and long enough to develop.',
@@ -150,10 +163,13 @@ function shapeQuestions(ctx: Ctx, contrastWith?: Theme): Question[] {
   ];
 }
 
-function shapeFrom(p: Picks, sub: 2 | 3): Shape {
-  const count = Number(p.length.slice(1));
+function shapeFrom(p: Picks, sub: 2 | 3, themeBars: number): Shape {
+  const bars = p.bars ? Number(p.bars.slice(1)) : themeBars;
+  // A one-bar motif cannot hold eight notes, nor a three-bar line only four.
+  const count = clamp(Number(p.length.slice(1)), bars === 3 ? 5 : 4, bars === 1 ? 6 : 8);
   const leapAt = p.leap_position === 'early' ? 1 : p.leap_position === 'late' ? count - 2 : Math.floor((count - 1) / 2);
   return {
+    bars,
     count,
     contour: p.contour,
     cell: cellsFor(sub).find((c) => c.id === p.rhythm_cell)!,
@@ -195,7 +211,7 @@ function wantedDirection(shape: Shape, i: number): number {
 
 async function draftNotes(ctx: Ctx, shape: Shape, label: string, themeId: string, extraState: string[]): Promise<Line> {
   const { piece, gw } = ctx;
-  const durs = rhythmFor(shape.cell, shape.count, piece.unitBeats);
+  const durs = rhythmFor(shape.cell, shape.count, shape.bars * piece.rules.meter.beatsPerBar);
   const degs = [shape.start];
   for (let i = 1; i <= shape.count - 2; i++) {
     const prev = degs[i - 1];
@@ -239,7 +255,7 @@ async function draftNotes(ctx: Ctx, shape: Shape, label: string, themeId: string
       callType: 'theme_note', title: `Theme ${themeId} ${label}: note ${i + 1} of ${shape.count}`,
       state: piece.preludeState('theme_note', [
         ...extraState,
-        `SHAPE   ${shape.count} notes; contour ${shape.contour}; rhythm ${shape.cell.label} (${durs.map((d) => Math.round(d * 100) / 100).join(' ')} beats); ends on degree ${mod(shape.end, 7) + 1}; the one leap is note ${shape.leapAt + 1}`,
+        `SHAPE   ${shape.bars} bar${shape.bars === 1 ? '' : 's'}, ${shape.count} notes; contour ${shape.contour}; rhythm ${shape.cell.label} (${durs.map((d) => Math.round(d * 100) / 100).join(' ')} beats); ends on degree ${mod(shape.end, 7) + 1}; the one leap is note ${shape.leapAt + 1}`,
         `SO FAR  ${notation(soFar)}   (degree(beats); this is note ${i + 1})`,
       ]),
       questions: [{
@@ -271,7 +287,7 @@ function themeView(ctx: Ctx, theme: Theme): ThemeView {
 export async function writeTheme(ctx: Ctx, id: string, kind: 'main' | 'contrast', contrastWith?: Theme): Promise<Theme> {
   const { piece, gw } = ctx;
   const key = piece.rules.key;
-  const extra = [`KEY     ${keyName(key)}; ${piece.rules.meter.id}; one theme fills ${piece.unitBeats} beats (two bars)`];
+  const extra = [`KEY     ${keyName(key)}; ${piece.rules.meter.id}${contrastWith || piece.themes.length ? `; one theme fills ${piece.unitBeats} beats (${piece.themeBars} bar${piece.themeBars === 1 ? '' : 's'})` : ''}`];
   if (contrastWith) extra.push(`THEME ${contrastWith.id} ${notation(contrastWith.line)}   contour: ${contrastWith.contour}   (the main theme; the new theme must contrast with it)`);
   let rejectNote = '';
 
@@ -281,7 +297,7 @@ export async function writeTheme(ctx: Ctx, id: string, kind: 'main' | 'contrast'
       callType: 'theme_shape', title: `Theme ${id}: shape (round ${round})`,
       state, questions: shapeQuestions(ctx, contrastWith), picking: 'sampled', draws: THEME_DRAFTS,
     });
-    const shapes = shapeAns.picks.map((p) => shapeFrom(p, piece.rules.meter.sub));
+    const shapes = shapeAns.picks.map((p) => shapeFrom(p, piece.rules.meter.sub, piece.themeBars));
     const lines = await Promise.all(shapes.map((s, i) => draftNotes(ctx, s, `draft ${i + 1}`, id, extra)));
 
     // Shuffle before judging so position cannot bias the pick.
@@ -301,6 +317,7 @@ export async function writeTheme(ctx: Ctx, id: string, kind: 'main' | 'contrast'
       if (contourOf(d.line) === d.shape.contour) s += 0.5;
       if (kept) s += 1.6 * (1 - kept.overall) - 0.6;
       const facts = [
+        { label: 'length', value: `${d.shape.bars} bar${d.shape.bars === 1 ? '' : 's'}, ${d.shape.count} notes` },
         { label: 'range', value: `${sh.rangeSemitones} semitones` },
         { label: 'largest leap', value: `${sh.largestLeap + 1 > 1 ? `${['unison', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'octave'][sh.largestLeap] ?? 'wide'}` : 'none'}${sh.leapRecovered ? ', recovered by step' : ''}` },
         { label: 'distinct pitches', value: String(sh.distinct) },
@@ -356,6 +373,7 @@ export async function writeTheme(ctx: Ctx, id: string, kind: 'main' | 'contrast'
     if (picked !== 'none') {
       const win = scored.find((d) => d.id === picked)!;
       const theme: Theme = { id, kind, line: win.line, contour: contourOf(win.line) };
+      if (kind === 'main') piece.themeBars = win.shape.bars;
       piece.themes.push(theme);
       ctx.emit({ type: 'theme', theme: themeView(ctx, theme) });
       return theme;

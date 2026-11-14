@@ -32,9 +32,10 @@ const body = {
   },
 };
 
-console.log(`POST https://console.nace.ai/v1/systemone  model=${model}`);
+const url = (process.env.DREX_API_URL ?? '').trim() || 'https://console.nace.ai/v1/systemone';
+console.log(`POST ${url}  model=${model}`);
 const t0 = Date.now();
-const res = await fetch('https://console.nace.ai/v1/systemone', {
+const res = await fetch(url, {
   method: 'POST',
   headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'X-Nace-Legend': 'array' },
   body: JSON.stringify(body),

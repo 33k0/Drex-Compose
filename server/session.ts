@@ -1,6 +1,6 @@
 // One run of the engine: prompt in, a stream of panel events and phrase scores out.
 
-import type { ClientEvent, ServerEvent } from '../shared/types.ts';
+import type { ClientEvent, PhraseScore, ServerEvent } from '../shared/types.ts';
 import { composePhrase } from './calls/compose.ts';
 import { chooseEnding, holdStep, startHold } from './calls/ending.ts';
 import { revisePlan, runBackdrop, runPlan, runSetup } from './calls/setup.ts';
@@ -12,7 +12,8 @@ import { DrexError, Gateway } from './gateway/gateway.ts';
 import { Piece } from './piece.ts';
 
 /** The look-ahead buffer holds up to this many accepted phrases beyond the one playing. */
-const BUFFER_AHEAD = 3;
+// One more than the client needs: a phrase is only sent once the next one exists (see below).
+const BUFFER_AHEAD = 4;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -127,6 +128,9 @@ export class Session {
       this.stats();
 
       const total = piece.plan.totalPhrases;
+      // A phrase can begin before its own bar line (a pickup, instruments stealing in), and those notes belong
+      // to the end of the phrase before. So each phrase is sent once the next has been composed.
+      let pending: PhraseScore | null = null;
       for (let index = 0; index < total && !this.stopped; index++) {
         await this.waitForRoom();
         if (this.stopped) break;
@@ -151,11 +155,15 @@ export class Session {
           this.stats();
         }, () => !this.stopped);
         if (!record) break;
-        this.holding = false;
-        this.send({ type: 'phrase', score: record.score });
+        if (pending) {
+          this.holding = false;
+          this.send({ type: 'phrase', score: pending });
+        }
+        pending = record.score;
         this.stats();
       }
       if (!this.stopped) {
+        if (pending) this.send({ type: 'phrase', score: pending });
         this.send({ type: 'status', stage: 'done', message: `Composed ${piece.phrases.length} phrases in ${this.gw.calls} Drex calls` });
         this.send({ type: 'done' });
       }
