@@ -11,7 +11,7 @@ import type { Articulation, MixState, NoteEvent, PhraseScore } from '../../../..
 import { demoPalette, demoScores } from '../demoScore.ts';
 import { instrumentFiles, isSynthId, joinUrl, normalizeManifest, sampleSourceId } from '../manifest.ts';
 import type { InstrumentDef } from '../manifest.ts';
-import { DEFAULT_MIX, DUCK_GAIN, delayTimeSec, mergeMix, mixToParams } from '../mixmap.ts';
+import { DEFAULT_MIX, DUCK_GAIN, curveLevel, delayTimeSec, mergeMix, mixToParams } from '../mixmap.ts';
 import { humanize, jitterMs, pedalOffBeats, planPhrase } from '../plan.ts';
 import { hashSeed, mulberry32 } from '../prng.ts';
 import {
@@ -458,6 +458,12 @@ test('MixState mapping endpoints', () => {
   assert.ok(mixToParams(mix({ width: 0 })).width < 0.2 && mixToParams(mix({ width: 6 })).width > 0.65 && mixToParams(mix({ width: 6 })).width < 1);
   near(20 * Math.log10(mixToParams(mix({ dynamics: 0 })).master), -18);
   near(mixToParams(mix({ dynamics: 6 })).master, 1);
+  // dynamics moving inside a phrase: linear between the curve's points, held outside them
+  const crescendo = [{ beat: 0, step: 2 }, { beat: 16, step: 4 }];
+  near(curveLevel(crescendo, 0), 2);
+  near(curveLevel(crescendo, 8), 3);
+  near(curveLevel(crescendo, 20), 4);
+  near(curveLevel([{ beat: 0, step: 3 }, { beat: 8, step: 4 }, { beat: 16, step: 3 }], 12), 3.5);
   const s0 = mixToParams(mix({ saturation: 0 }));
   const s6 = mixToParams(mix({ saturation: 6 }));
   near(s0.satPre * s0.satPost, 1, 1e-9); // clean and unity at 0

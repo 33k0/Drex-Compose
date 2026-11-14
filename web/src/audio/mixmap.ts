@@ -84,6 +84,18 @@ export function mixToParams(mix: MixState, world: SoundWorld = 'large_hall'): Mi
   return { lowpassHz, reverbWet, dry, delayWet, noiseGain, width, satPre, satPost, chorusWet: mix.chorus ? 0.38 : 0, master, sidechain: !!mix.sidechain };
 }
 
+/** The dynamics level (a fractional pp..fff step) at one beat of a phrase's dynamic curve. */
+export function curveLevel(curve: { beat: number; step: number }[], beat: number): number {
+  if (!curve.length) return DEFAULT_MIX.dynamics;
+  if (beat <= curve[0].beat) return step(curve[0].step);
+  for (let i = 1; i < curve.length; i++) {
+    const a = curve[i - 1];
+    const b = curve[i];
+    if (beat <= b.beat) return step(a.step + ((b.step - a.step) * (beat - a.beat)) / Math.max(1e-6, b.beat - a.beat));
+  }
+  return step(curve[curve.length - 1].step);
+}
+
 export function mergeMix(base: MixState, patch?: Partial<MixState>): MixState {
   if (!patch) return { ...base };
   const out: MixState = { ...base };

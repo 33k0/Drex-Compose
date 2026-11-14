@@ -12,7 +12,7 @@ import {
 } from '../core/theory.ts';
 import { applyOps, describeOps, MELODIC_OPS, TEXTURE_OPS } from '../core/transform.ts';
 import type { ChoiceOption, Picks, Question } from '../gateway/gateway.ts';
-import type { Direction, Piece, SegmentChoice, Slot } from '../piece.ts';
+import { arrivesAfterBreath, isWall, type Direction, type Piece, type SegmentChoice, type Slot } from '../piece.ts';
 
 const opt = (key: string, label: string, criteria: string, prior = 0): ChoiceOption => ({ key, label, criteria, prior });
 
@@ -85,6 +85,14 @@ function opWeight(role: PhraseRole, seg: 1 | 2, id: string): number {
   return table[role][id] ?? -0.8;
 }
 
+/** What the plan has already decided about this phrase's first half: at the climax, the theme may return whole or broadened. */
+export function planFixed(piece: Piece, index: number): Picks {
+  if (index !== piece.plan.climaxPhrase) return {};
+  if (piece.plan.climaxTheme === 'returns') return { seg1_source: 'A', seg1_op1: 'none' };
+  if (piece.plan.climaxTheme === 'broadened') return { seg1_source: 'A', seg1_op1: 'augmentation' };
+  return {};
+}
+
 function directionQuestions(ctx: Ctx, index: number): Question[] {
   const { piece } = ctx;
   const role = piece.roleOf(index);
@@ -103,6 +111,9 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
   const section = piece.sectionOf(index);
   const sectionEnd = index === section.last;
   const finalPhrase = index === piece.plan.totalPhrases - 1;
+  const fixed = planFixed(piece, index);
+  const wallHere = index === piece.plan.climaxPhrase && isWall(piece.plan.climaxArrival);
+  const wallNext = index === piece.plan.climaxPhrase - 1 && arrivesAfterBreath(piece.plan.climaxArrival);
 
   const sources = (seg: 1 | 2): ChoiceOption[] => {
     const lead = role === 'statement' || role === 'return' || role === 'climax' || role === 'coda';
@@ -134,6 +145,8 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
         return opt(o.id, o.label, o.effect, w);
       }),
     ];
+    // The theme returning at the climax may only be lifted an octave, nothing more.
+    if (seg === 1 && second && fixed.seg1_source) return all.filter((o) => o.key === 'none' || o.key === 'register_up');
     return all;
   };
 
@@ -174,7 +187,7 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
   questions.push({
     id: 'harmonic_rhythm', type: 'choice', label: 'Harmonic rhythm',
     instructions: 'How fast should the chords change in this phrase?',
-    options: Object.entries(HARMONIC_RHYTHM).map(([k, text]) => opt(k, k.replace(/_/g, ' '), text,
+    options: Object.entries(HARMONIC_RHYTHM).filter(([k]) => !(wallHere && k === 'half_bar')).map(([k, text]) => opt(k, k.replace(/_/g, ' '), text,
       k === 'oscillation' ? (orch ? 1.6 - t * 0.3 : 0.6) + (index === 0 && orch ? 0.8 : 0)
         : k === 'two_bars' ? 1.2 - t * 0.25
           : k === 'bar' ? 1
@@ -182,10 +195,12 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
   });
   const endPref = finalPhrase
     ? { resolved: piece.rules.ending === 'resolved' ? 3 : 0.3, half_resolved: piece.rules.ending === 'sudden_stop' ? 2 : 0, suspended: piece.rules.ending === 'suspended' || piece.rules.ending === 'fade' ? 2.5 : 0.2 }
-    : { resolved: (sectionEnd ? 1 : 0.2) + (orch ? 0 : 0.4), half_resolved: 0.9, suspended: orch ? 1 : 0.4 };
+    : { resolved: (sectionEnd ? 1 : 0.2) + (orch ? 0 : 0.4), half_resolved: 0.9 + (wallNext ? 1.5 : 0), suspended: orch ? 1 : 0.4 };
   questions.push({
     id: 'phrase_ending', type: 'choice', label: 'Phrase ending',
-    instructions: 'How should the phrase end?',
+    instructions: wallNext
+      ? 'How should the phrase end? The climax arrives straight after it, following a held breath: the chord left hanging in that silence decides whether the arrival feels earned.'
+      : 'How should the phrase end?',
     options: Object.entries(ENDINGS).map(([k, text]) => opt(k, k.replace(/_/g, ' '), text, endPref[k as keyof typeof endPref])),
   });
 
@@ -201,7 +216,8 @@ function directionQuestions(ctx: Ctx, index: number): Question[] {
       ],
     });
   }
-  return questions;
+  // Whatever the plan already fixed is not asked again.
+  return questions.filter((qn) => !(qn.id in fixed));
 }
 
 function directionFrom(p: Picks): Direction {
@@ -374,6 +390,11 @@ async function chordPath(ctx: Ctx, index: number, draft: Draft, label: string): 
     }
   };
 
+  // Mode mixture: the chord before the last is borrowed from the parallel mode.
+  const mixGroup = dir.flags.mode_mixture && groups.length >= 2 ? groups[groups.length - 2] : null;
+  const wallNext = index === piece.plan.climaxPhrase - 1 && arrivesAfterBreath(piece.plan.climaxArrival);
+  const climaxHere = index === piece.plan.climaxPhrase;
+
   const questions: Question[] = [];
   for (const g of groups) {
     const slots = layout.filter((s) => s.group === g);
@@ -385,6 +406,10 @@ async function chordPath(ctx: Ctx, index: number, draft: Draft, label: string): 
     if (isLast) {
       pool = modChords ?? candidates.filter((c) => endingAllowed(c, dir.ending));
       if (!pool.length) pool = candidates;
+    }
+    if (g === mixGroup && !isLast) {
+      const borrowed = candidates.filter((c) => c.family === 'borrowed');
+      if (borrowed.length >= 2) pool = borrowed;
     }
     const excluded = previousUse[first];
     if (excluded && pool.length > 3) pool = pool.filter((c) => c.id !== excluded);
@@ -417,7 +442,7 @@ async function chordPath(ctx: Ctx, index: number, draft: Draft, label: string): 
       : `chord ${first + 1} of ${layout.length}${isLast ? ' (the last: it carries the phrase ending)' : ''}`;
     questions.push({
       id: `chord_${g}`, type: 'choice', label: `Chord ${g}`,
-      instructions: `Choose ${where}, starting at beat ${slots[0].t + 1}.${isLast && !modChords ? ` The phrase ending was chosen as ${dir.ending.replace('_', '-')}.` : ''}`,
+      instructions: `Choose ${where}, starting at beat ${slots[0].t + 1}.${isLast && !modChords ? ` The phrase ending was chosen as ${dir.ending.replace('_', '-')}.` : ''}${g === mixGroup && !isLast ? ' Mode mixture was chosen for this phrase: this is the chord borrowed from the parallel mode.' : ''}${isLast && wallNext ? ' The climax arrives straight after this chord, following a held breath.' : ''}${first === 0 && climaxHere ? ' This is the chord the climax arrives on.' : ''}`,
       options,
     });
     questions.push({
@@ -437,7 +462,7 @@ async function chordPath(ctx: Ctx, index: number, draft: Draft, label: string): 
     callType: 'chord_path', title: `Phrase ${index + 1} ${label}: chord path`,
     state: piece.state('chord_path', index, [
       `DRAFT   ${notation(line)}   = ${draft.lineage}`,
-      `HARMONY ${HARMONIC_RHYTHM[dir.harmonicRhythm]}; ending ${dir.ending.replace('_', '-')}${dir.flags.mode_mixture ? `; mode mixture: this phrase is in ${keyName(key)}` : ''}${dir.modulation ? `; modulation to ${keyName(nextKey)} by ${dir.modulation.replace('_', ' ')}` : ''}${piece.lastChord ? `; the previous phrase ended on ${chordName(piece.lastChord, piece.phrases[piece.phrases.length - 1].key)}` : ''}`,
+      `HARMONY ${HARMONIC_RHYTHM[dir.harmonicRhythm]}; ending ${dir.ending.replace('_', '-')}${mixGroup ? '; mode mixture: one chord is borrowed from the parallel mode' : ''}${dir.modulation ? `; modulation to ${keyName(nextKey)} by ${dir.modulation.replace('_', ' ')}` : ''}${piece.lastChord ? `; the previous phrase ended on ${chordName(piece.lastChord, piece.phrases[piece.phrases.length - 1].key)}` : ''}`,
     ]),
     questions, picking: 'sampled', draws: 1,
   });
@@ -572,11 +597,11 @@ export async function draftRound(ctx: Ctx, index: number, round: number): Promis
     questions: directionQuestions(ctx, index), picking: 'sampled', draws: PHRASE_DRAFTS,
   });
   const letters = 'abcdefgh';
+  const fixed = planFixed(piece, index);
   const drafts: Draft[] = dirAns.picks.map((p, i) => {
-    const direction = directionFrom(p);
-    const key: Key = direction.flags.mode_mixture
-      ? { tonic: section.key.tonic, mode: parallelMode(section.key.mode), spell: usesFlats(section.key) ? 'flat' : 'sharp' }
-      : section.key;
+    const direction = directionFrom({ ...p, ...fixed });
+    // Mode mixture borrows one chord (see chordPath); the phrase itself stays in the section's key.
+    const key: Key = section.key;
     const built = buildLine(piece, direction, index);
     return {
       id: `draft_${letters[i]}`, direction, key, line: built.line, lineage: built.lineage, depth: built.depth, intact: built.intact,
@@ -658,8 +683,9 @@ export async function judgeDrafts(ctx: Ctx, index: number, round: number, drafts
       const rel = Math.max(kept.overall, chainRelated ? 0.42 : 0);
       if (rel < DRIFT_LEVEL) { s -= 2; failure = 'drift'; } else s += 1 + (kept.overall > 0.35 && kept.overall < 0.92 ? 0.7 : 0);
     }
-    if (lastFour.length && maxSim > COPY_LEVEL && role !== 'return') { s -= 2.6; failure = 'copy'; } else s += (1 - maxSim) * 0.8;
-    if (closest && closest.sim > COPY_LEVEL && !(role === 'return' && d.intact)) { s -= 2.6; failure = 'copy'; }
+    const plannedReturn = (index === piece.plan.climaxPhrase && piece.plan.climaxTheme !== 'continues') || piece.rules.style === 'beat_driven';
+    if (lastFour.length && maxSim > COPY_LEVEL && role !== 'return' && !plannedReturn) { s -= 2.6; failure = 'copy'; } else s += (1 - maxSim) * 0.8;
+    if (closest && closest.sim > COPY_LEVEL && !(role === 'return' && d.intact) && !plannedReturn) { s -= 2.6; failure = 'copy'; }
     if (bad.length >= 3) failure = failure || 'clash';
     s -= 0.4 * Math.min(4, bad.length);
     s -= 0.12 * vl[i].leaps + 0.15 * vl[i].nonChord;
@@ -673,12 +699,18 @@ export async function judgeDrafts(ctx: Ctx, index: number, round: number, drafts
   const failures = order.map((d) => d.failure).filter(Boolean);
   const mainFailure = failures.sort((a, b) => failures.filter((x) => x === b).length - failures.filter((x) => x === a).length)[0] ?? 'aimless';
 
+  const themeBack = index === piece.plan.climaxPhrase && piece.plan.climaxTheme !== 'continues';
+  const loops = piece.rules.style === 'beat_driven';
   const roleRule: Record<PhraseRole, string> = {
     statement: 'This phrase states the theme: it should be plainly recognisable.',
-    development: 'This is a development phrase: it must be related to the theme AND new. Reject drift (no longer related) and copies (too close to any of the last four phrases).',
+    development: loops
+      ? 'This is a development phrase in a loop-based style. It must stay related to the theme; an exact repeat of an earlier phrase is right here, because the change comes from the drums, bass, layers and filter around it. Reject drift (no longer related).'
+      : 'This is a development phrase: it must be related to the theme AND new. Reject drift (no longer related) and copies (too close to any of the last four phrases).',
     departure: 'This is a planned departure: the test flips. The phrase must CONTRAST with the main theme while fitting the key and mood.',
     return: 'The theme returns here. A theme that comes back intact must have new harmony or new instruments.',
-    climax: 'This is the climax: related to the theme, at its most intense, and not a copy of the last four phrases.',
+    climax: themeBack
+      ? `This is the climax, and the plan brings the main theme back here ${piece.plan.climaxTheme === 'broadened' ? 'at half speed' : 'whole'}: hearing the theme again at full intensity is the point of the moment, not a copy.`
+      : 'This is the climax: related to the theme, at its most intense, and not a copy of the last four phrases.',
     coda: 'This is the coda: related to the theme, winding down, not a copy of the last four phrases.',
   };
   const verdictQ: Question = {

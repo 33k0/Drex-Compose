@@ -18,20 +18,25 @@ Open http://localhost:5173, type a prompt, press Enter.
 project still runs: a local **stand-in** answers instead, the panel shows a `STAND-IN` badge, and no
 request leaves the machine. The stand-in is a set of hand-written heuristics (one prior per option,
 in the same files that build the questions). It exists so the engine, the sound and the panel can
-be built and rehearsed; it is not Drex and proves nothing about Drex's taste. The real client is
-written to the published API and tested against the documented response shapes with the network
-stubbed, but **it has never made a live call**, because no key was available when this was built.
+be built and rehearsed; it is not Drex and proves nothing about Drex's taste. The real client has
+been run against the live API: whole pieces compose end to end on `drex-max-v1.1` in about a minute
+on the paid tier. `npm run ping` makes one tiny live call to check a key.
 
 Other commands:
 
 | Command | What it does |
 |---|---|
 | `npm run compose -- "a prompt" [--seed 7] [--midi out.mid] [--verbose]` | Compose a whole piece without the browser and print every choice. `--midi` writes a file you can audition in any player. |
+| `npm run ping` | One tiny live Drex call, raw response printed, then the same questions through the gateway. |
 | `npm test` | Unit tests: transformations, facts, chord options, the Drex client, whole-piece invariants. |
 | `npm run eval` | The evaluation table below. |
 | `npm run build && npm start` | Production build, served by the server on :8787. |
 | `node tools/ndi/ingest.mjs --all` | Rebuild the theory digest with NDI (needs a key). |
 | `node tools/make-backdrops.mjs` | Regenerate the placeholder backdrops. |
+
+**Replaying a saved piece.** `npm run compose -- "a prompt" --json eval/results/<name>/events.json`
+saves a run; `http://localhost:5173/?replay=<name>` then plays it through the real engine (samples,
+hall, mix) without calling Drex again.
 
 `DREX_PICKER=random` swaps Drex for a random picker (the control for the blind listening test).
 `DREX_DUMP_DIR=some/dir` saves the first three request bodies of each call type exactly as Drex
@@ -72,16 +77,27 @@ real-time playback of anything but the slow style needs the raised limit or a to
 
 ## What Drex decides
 
-Setup: style sheet, tempo, meter, key centre, mode, harmonic language, palette (a yes/no per
-instrument), sound world, length, form, key-change plan, ending. Plan: each section's role, tension
-(1 to 7) and whether it leaves the theme, the climax position, and whether the piece needs a
-counter-theme and a contrast theme; revised by Drex at every section end. Theme: length, contour,
+Setup: style sheet, the groove family of a beat-driven piece (house, boom-bap, trap, funk, pop),
+tempo, meter, key centre, mode, harmonic language, palette (a yes/no per instrument, asked as a pool
+to draw on), sound world, length (2:30 to 3:30), form, key-change plan, ending. Plan: each section's
+role, tension (1 to 7) and whether it leaves the theme, the climax position, how the climax arrives
+(a swell, a hit, a held breath then a wall of sound, the wall with the tempo broadening, or in
+beat-driven pieces the drop), what the melody is at the climax (the theme back whole, the theme at
+half speed, or development carrying on), whether the theme is stated twice at the start, and whether
+the piece needs a counter-theme and a contrast theme; tension is revised by Drex at every section end. Theme: length, contour,
 rhythm cell, start and end degrees, where the one leap sits, then each note in turn; six drafts and
 a judge. Every phrase: material and transformations for each half, counter-melody, seven texture
 transformations, harmonic rhythm, ending, modulation; every chord and bass move; every inner voice
-at every chord change; the verdict; then about fifty orchestration and mix answers (which layers
-play, on what, how loud, how they enter, patterns, accents, a pause before a hit, six effect amounts,
-chorus, sidechain).
+at every chord change; the verdict; then about sixty orchestration and mix answers: how full the
+texture is and which layers play, the melody's instrument and register (each option states how far it
+starts from where the last phrase ended and how its top note compares with the highest so far), a
+second instrument doubling the melody, how the texture moves inside the phrase (late entries,
+drop-outs, a bare last bar), how the phrase closes (run on, a breath, a silence), how the dynamic
+moves inside it (steady, crescendo, diminuendo, swell), patterns, bass rhythm, accents, a pause
+before a hit, six effect amounts, chorus, sidechain.
+
+Code gives Drex facts with those questions and never a verdict: which instruments have played
+without a break and which are resting, the fullest phrase so far, the level the last phrase ended at.
 
 ## Evaluation (`npm run eval`)
 
@@ -137,6 +153,12 @@ extract rules, keep page references) is written to the documented API and dry-ru
 not run against the live service. Nine places where the NDI docs were silent are marked
 `DOCS-UNVERIFIED` in that file.
 
+**Rules for beat-driven pieces.** The four books stop in 1900, so `context-pack/modern.json` adds 40
+rules on grooves, hooks, bass, arrangement and production for pop, hip-hop, trap, funk and house.
+They are hand-written from general knowledge (marked `own`), not parsed from a source, and are sent
+only when the piece uses the beat-driven sheet. In that style a looped motif is right, so the phrase
+judge is told not to reject repeats.
+
 ## Credits
 
 **Piano.** Salamander Grand Piano V3 by Alexander Holm, licensed CC BY 3.0, obtained through the
@@ -161,6 +183,11 @@ Full detail, including every modification, is in `assets/CREDITS.md`.
 
 - **Drex can't hear.** It judges notation and measured facts.
 - **Drex only picks from options it is given.** Its range is the option lists and the transformation library.
+- **Measured, not heard.** Changes since the first live runs were checked against note data from
+  live pieces (leaps at phrase joins, silence, instruments per phrase, where the top note falls),
+  not by ear.
+- **Runs are not repeatable.** The same prompt and seed give a different piece each time: drafts
+  are composed in parallel and draw from one random stream in arrival order.
 - **Nothing here has been heard by the person who built it.** The sample library was verified
   numerically (every file decodes, every pitch checked) and the engine is confirmed to produce signal
   in a browser, but balance, realism and taste all still need tuning by ear.

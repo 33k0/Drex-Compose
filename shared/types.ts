@@ -4,6 +4,8 @@
 // ───────────────────────────── Music basics ─────────────────────────────
 
 export type StyleId = 'bittersweet_orchestral' | 'beat_driven' | 'playful';
+/** Groove family of a beat-driven piece: Drex picks one at setup. */
+export type GrooveId = 'house' | 'boom_bap' | 'trap' | 'funk' | 'pop';
 export type MeterId = '4/4' | '3/4' | '6/8' | '12/8' | '5/4' | '7/8';
 export type ModeId =
   | 'major' | 'natural_minor' | 'harmonic_minor' | 'melodic_minor'
@@ -14,7 +16,7 @@ export type FormId = 'arch' | 'slow_build' | 'theme_development_return' | 'throu
 export type EndingId = 'resolved' | 'suspended' | 'fade' | 'sudden_stop';
 export type KeyPlanId = 'none' | 'relative' | 'step_up_at_climax' | 'distant_dark_turn';
 /** How the climax arrives: Drex picks one in the plan call. */
-export type ArrivalId = 'swell' | 'hit' | 'open_wall' | 'broaden';
+export type ArrivalId = 'swell' | 'hit' | 'open_wall' | 'broaden' | 'drop';
 export type PhraseRole = 'statement' | 'development' | 'departure' | 'return' | 'climax' | 'coda';
 
 export type LayerRole =
@@ -102,6 +104,11 @@ export interface PhraseScore {
   /** Sustain-pedal marks for the piano, in beats. */
   pedal: { t: number; down: boolean }[];
   mix: MixState;
+  /**
+   * Overall dynamics moving inside the phrase (crescendo, diminuendo, swell): the level, in the same
+   * pp..fff steps as `mix.dynamics` (fractions allowed), at beat positions. Absent = steady at `mix.dynamics`.
+   */
+  dynCurve?: { beat: number; step: number }[];
   /** The chord left sounding if the buffer runs dry after this phrase. */
   holdChord: HoldNote[];
   /** Last phrase of the piece. */
@@ -192,6 +199,8 @@ export interface CallView {
 export interface RulesView {
   style: StyleId;
   styleName: string;
+  /** Beat-driven pieces only. */
+  groove?: GrooveId;
   bpm: number;
   meter: MeterId;
   keyName: string;

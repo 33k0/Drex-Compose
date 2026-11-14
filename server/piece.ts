@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  ArrivalId, Articulation, EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId, LayerRole, LayerSummary,
+  ArrivalId, Articulation, EndingId, FormId, GrooveId, HarmonicLanguage, InstrumentId, KeyPlanId, LayerRole, LayerSummary,
   MixState, PhraseRole, PhraseScore, SoundWorld, StyleId,
 } from '../shared/types.ts';
 import { DYNAMIC_NAMES } from '../shared/types.ts';
@@ -46,14 +46,14 @@ export const INSTRUMENTS: Record<string, InstrumentInfo> = Object.fromEntries(
     I('bass_drum', 'Orchestral bass drum', [36, 36], 'a deep impact', ['hit']),
     I('cymbal', 'Cymbals', [49, 49], 'crash or swelling roll', ['hit', 'roll']),
     I('tam_tam', 'Tam-tam', [52, 52], 'dark metallic wash', ['hit']),
-    I('drumkit', 'Drum kit', [36, 51], 'kick, snare and hats; a groove', ['hit']),
+    I('drumkit', 'Drum kit', [36, 51], 'kick, snare, hi-hats, toms and cymbals: the beat itself in pop, hip-hop, funk and dance music', ['hit']),
     I('celesta', 'Celesta', [60, 108], 'small bells, childlike sparkle', ['sustain']),
     I('glockenspiel', 'Glockenspiel', [72, 108], 'bright metal sparkle on top', ['sustain']),
     I('vibraphone', 'Vibraphone', [53, 89], 'soft glowing metal, cool', ['sustain']),
     I('sub', 'Sub bass (sine)', [24, 48], 'pure low weight, felt more than heard', ['sustain'], true),
     I('pad', 'Synth pad', [36, 84], 'slow, smooth electronic bed', ['sustain'], true),
     I('pluck', 'Pluck synth', [36, 96], 'short bright electronic pluck', ['staccato'], true),
-    I('kick808', 'Soft electronic kick', [36, 36], 'round low thump', ['hit'], true),
+    I('kick808', 'Electronic kick (808)', [36, 36], 'round low electronic thump; with a drum kit in the palette, the kit plays snare and hats around it', ['hit'], true),
     I('noise', 'Water and wave texture', [60, 60], 'filtered noise with a slow swell: water, air', ['sustain'], true),
   ].map((i) => [i.id, i]),
 );
@@ -117,8 +117,24 @@ export function availableInstruments(): Set<string> {
 
 // ───────────────────────────── Rules, plan, themes ─────────────────────────────
 
+/** The groove families of the beat-driven sheet, as Drex reads them. */
+export const GROOVES: Record<GrooveId, { label: string; text: string; bpm: number; patterns: string[] }> = {
+  house: { label: 'house', bpm: 124, patterns: ['four_on_floor', 'half_time', 'syncopated'],
+    text: 'house and dance: a four-on-the-floor kick at 118 to 128 BPM, open hats off the beat, long filter builds and drops' },
+  boom_bap: { label: 'boom-bap', bpm: 90, patterns: ['boom_bap', 'half_time', 'backbeat'],
+    text: 'boom-bap hip-hop: 82 to 96 BPM, heavy swung drums, kick and snare trading blows with space between, a short looped motif' },
+  trap: { label: 'trap', bpm: 140, patterns: ['trap', 'half_time', 'syncopated'],
+    text: 'trap and modern rap: 130 to 150 BPM felt in half time, the snare on beat three, fast hi-hats with rolls, long 808 bass notes that hit with the kick' },
+  funk: { label: 'funk', bpm: 104, patterns: ['funk', 'backbeat', 'syncopated'],
+    text: 'funk: 95 to 115 BPM, sixteenth-note hats, kick and bass locked in a syncopated figure, ghost notes on the snare, everything pointing at beat one' },
+  pop: { label: 'pop', bpm: 110, patterns: ['backbeat', 'four_on_floor', 'half_time', 'syncopated'],
+    text: 'modern pop: 96 to 124 BPM, a plain strong backbeat, a four-chord loop and a short hook that repeats' },
+};
+
 export interface Rules {
   style: StyleId;
+  /** Beat-driven pieces only. */
+  groove?: GrooveId;
   bpm: number;
   meter: Meter;
   key: Key;
@@ -151,6 +167,10 @@ export interface Plan {
   climaxPhrase: number;
   /** How the climax arrives; Drex's choice in the plan call. */
   climaxArrival: ArrivalId;
+  /** What the melody is at the climax: the theme back whole, the theme broadened, or development carrying on. Drex's choice. */
+  climaxTheme: ClimaxTheme;
+  /** The theme is stated a second time, in a new light, straight after the first. Drex's choice. */
+  restate: boolean;
   needsCounter: boolean;
   needsContrast: boolean;
 }
@@ -217,9 +237,20 @@ export const ARRIVAL_TEXT: Record<ArrivalId, string> = {
   hit: 'a hit: one accented blow lands on top of the same texture, which then carries on as before. A landmark, not a change of state',
   open_wall: 'a held breath, then the wall: everything stops for an instant, then the pulse and figuration fall away and the whole ensemble opens into one sustained wall of sound, at full volume with the filter fully open. Awe, release, breaking the surface',
   broaden: 'the same held breath and wall of sound, and the tempo also broadens at the arrival, so the peak feels vast and slowed, time stretching',
+  drop: 'the drop: the beat thins to almost nothing for a bar, a breath of silence, then kick, bass and every layer slam back in together at full weight with the filter wide open',
+};
+/** Which arrivals each style offers: an orchestral wall loses the pulse, which is the opposite of what a beat wants at its peak. */
+export const arrivalsFor = (style: StyleId): ArrivalId[] => (style === 'beat_driven' ? ['swell', 'hit', 'drop'] : ['swell', 'hit', 'open_wall', 'broaden']);
+/** The climax arrives after everything stops for a moment. */
+export const arrivesAfterBreath = (a: ArrivalId | undefined): boolean => a === 'open_wall' || a === 'broaden' || a === 'drop';
+export type ClimaxTheme = 'returns' | 'broadened' | 'continues';
+export const CLIMAX_THEME_TEXT: Record<ClimaxTheme, string> = {
+  returns: 'the main theme returns whole and plainly recognisable: the moment everything before was leading to, a homecoming',
+  broadened: 'the main theme returns at half speed, in long notes over the whole phrase: the same tune made vast and grave',
+  continues: 'no return: the climax is the furthest point of the development, the theme still in pieces',
 };
 export const ARRIVAL_LABEL: Record<ArrivalId, string> = {
-  swell: 'swell, no break', hit: 'a hit', open_wall: 'held breath, then the wall', broaden: 'held breath, wall, tempo broadens',
+  swell: 'swell, no break', hit: 'a hit', open_wall: 'held breath, then the wall', broaden: 'held breath, wall, tempo broadens', drop: 'the drop',
 };
 /** The climax arrives as a wall of sound (with or without broadening). */
 export const isWall = (a: ArrivalId | undefined): boolean => a === 'open_wall' || a === 'broaden';
@@ -299,6 +330,8 @@ export class Piece {
   roleOf(phrase: number): PhraseRole {
     const s = this.sectionOf(phrase);
     if (phrase === this.plan.climaxPhrase) return 'climax';
+    // Drex chose to state the theme twice at the start: the second statement comes back in a new light.
+    if (this.plan.restate && phrase === 1 && s.index === 0 && s.last >= 1) return 'return';
     if (phrase === this.plan.totalPhrases - 1 && s.role !== 'departure') return 'coda';
     if (s.role === 'statement' || s.role === 'return') return phrase === s.first ? s.role : 'development';
     if (s.role === 'climax') return 'development';
@@ -334,7 +367,7 @@ export class Piece {
     const r = this.rules;
     const mins = Math.floor(r.lengthSec / 60);
     const secs = String(Math.round(r.lengthSec % 60)).padStart(2, '0');
-    return `PIECE   style: ${pack.sheet(r.style).name}; ${r.meter.id}, ${r.bpm} BPM, ${keyName(r.key)}, ${r.soundWorld.replace(/_/g, ' ')}, ${mins}:${secs}; harmony: ${HARMONIC_LANGUAGE_TEXT[r.harmonicLanguage]}`;
+    return `PIECE   style: ${pack.sheet(r.style).name}; ${r.meter.id}, ${r.bpm} BPM, ${keyName(r.key)}, ${r.soundWorld.replace(/_/g, ' ')}, ${mins}:${secs}; harmony: ${HARMONIC_LANGUAGE_TEXT[r.harmonicLanguage]}${r.groove ? `; groove: ${GROOVES[r.groove].text}` : ''}`;
   }
 
   private planLine(): string {
@@ -342,7 +375,7 @@ export class Piece {
     const deps = p.sections.filter((s) => s.departure).map((s) => s.index + 1);
     return (
       `PLAN    ${p.sections.length} sections, roles ${p.sections.map((s) => s.role).join(' / ')}; tension ${p.sections.map((s) => s.tension).join(' ')} (1 calm … 7 overwhelming); ` +
-      `departure = ${deps.length ? deps.join(', ') : 'none'}; climax = phrase ${p.climaxPhrase + 1} (section ${this.sectionOf(p.climaxPhrase).index + 1}), arriving as ${ARRIVAL_LABEL[p.climaxArrival ?? 'hit']}; ending: ${this.rules.ending.replace(/_/g, ' ')}`
+      `departure = ${deps.length ? deps.join(', ') : 'none'}; climax = phrase ${p.climaxPhrase + 1} (section ${this.sectionOf(p.climaxPhrase).index + 1}), arriving as ${ARRIVAL_LABEL[p.climaxArrival ?? 'hit']}${p.climaxTheme === 'returns' ? ', with the main theme returning whole' : p.climaxTheme === 'broadened' ? ', with the main theme returning at half speed' : ''}; ending: ${this.rules.ending.replace(/_/g, ' ')}`
     );
   }
 
@@ -378,7 +411,7 @@ export class Piece {
     const lines = [`PROMPT  "${this.prompt}"`];
     if (this.rules) lines.push(this.pieceLine(), pack.styleText(this.rules.style));
     lines.push(...this.preludeLines, ...extra);
-    const theory = pack.theory(callType);
+    const theory = pack.theory(callType, this.rules?.style);
     if (theory) lines.push(theory);
     return lines.join('\n');
   }
@@ -403,7 +436,7 @@ export class Piece {
     const cue = this.picture?.(phrase);
     if (cue) lines.push(...cue.lines);
     lines.push(...extra);
-    const theory = pack.theory(callType);
+    const theory = pack.theory(callType, this.rules?.style);
     if (theory) lines.push(theory);
     return lines.filter(Boolean).join('\n');
   }

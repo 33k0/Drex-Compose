@@ -227,7 +227,7 @@ export interface TextureOp {
 
 export const TEXTURE_OPS: TextureOp[] = [
   { id: 'reharmonise', label: 'Reharmonise', phrase: 'reharmonised', effect: 'same melody, new chords: familiar tune, changed meaning' },
-  { id: 'mode_mixture', label: 'Mode mixture', phrase: 'recast in the parallel mode', effect: 'recast in parallel major or minor: same idea, different light' },
+  { id: 'mode_mixture', label: 'Mode mixture', phrase: 'with a chord borrowed from the parallel mode', effect: 'one chord late in the phrase is borrowed from the parallel major or minor, the key itself staying put: the same idea in a different light for a moment' },
   { id: 'handoff', label: 'Instrument handoff', phrase: 'handed to a new instrument', effect: 'the line passes to another instrument: a new voice takes the idea' },
   { id: 'call_response', label: 'Call and response', phrase: 'split as call and response', effect: 'split between two instruments: conversation' },
   { id: 'overlap', label: 'Overlap', phrase: 'second entry overlapping', effect: 'a second entry begins before the first ends: density' },

@@ -273,6 +273,11 @@ export class MixGraph {
     this.widener.width.setTargetAtTime(p.width, time, tc);
   }
 
+  /** Move the master level toward `master` from `time` (dynamics changing inside a phrase). */
+  easeMaster(master: number, time: number, tc: number): void {
+    this.master.gain.setTargetAtTime(master * MASTER_TRIM, time, Math.max(0.005, tc));
+  }
+
   /** Sidechain: dip every bus except pulse / accents to about -9 dB at `time`, recovering in ~180 ms. */
   duck(time: number): void {
     const dip = (g: AudioParam): void => {

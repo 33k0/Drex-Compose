@@ -8,10 +8,10 @@ import { DYNAMIC_NAMES } from '../../shared/types.ts';
 import { AMOUNT_LEVELS, DYNAMIC_LEVELS, sigmoid, type Ctx } from '../context.ts';
 import { lineLength, notation, pitched, q, timed, truncate, type Line } from '../core/line.ts';
 import { clamp, mod } from '../core/rng.ts';
-import { chordName, chordPcs, degreeToMidi, fitOf, keyName, MODES, type Key } from '../core/theory.ts';
+import { chordName, chordPcs, degreeToMidi, fitOf, keyName, midiName, MODES, type Key } from '../core/theory.ts';
 import { applyOps } from '../core/transform.ts';
 import type { ChoiceOption, Picks, Question } from '../gateway/gateway.ts';
-import { ARRIVAL_LABEL, INSTRUMENTS, isWall, ROLE_INSTRUMENTS, type PhraseRecord, type Piece, type Slot } from '../piece.ts';
+import { ARRIVAL_LABEL, arrivesAfterBreath, GROOVES, INSTRUMENTS, isWall, ROLE_INSTRUMENTS, type PhraseRecord, type Piece, type Slot } from '../piece.ts';
 import { linger } from './ending.ts';
 import type { Draft } from './phrase.ts';
 
@@ -50,6 +50,69 @@ function pcIn(pc: number, lo: number): number {
   return lo + mod(pc - lo, 12);
 }
 
+// ───────────────────────────── Facts for Drex ─────────────────────────────
+
+/** Where the melody has been: the note the last phrase ended on, and the highest note heard so far. */
+function melodyFacts(piece: Piece): { lastEnd: number | null; top: { midi: number; phrase: number } | null } {
+  let top: { midi: number; phrase: number } | null = null;
+  for (const ph of piece.phrases) {
+    for (const n of ph.score.notes) {
+      if (n.layer === 'melody' && (!top || n.midi > top.midi)) top = { midi: n.midi, phrase: ph.index + 1 };
+    }
+  }
+  const last = piece.phrases[piece.phrases.length - 1];
+  const tail = last?.score.notes.filter((n) => n.layer === 'melody').sort((a, b) => a.t + a.dur - (b.t + b.dur) || a.midi - b.midi).pop();
+  return { lastEnd: tail ? tail.midi : null, top };
+}
+
+/** Which instruments have been playing without a break, which are resting, and the fullest phrase so far. */
+function playedFacts(piece: Piece): string | null {
+  if (!piece.phrases.length) return null;
+  const heard = piece.phrases.map((ph) => new Set(ph.score.notes.map((n) => n.inst)));
+  const running: string[] = [];
+  const resting: string[] = [];
+  for (const id of piece.rules.palette) {
+    let run = 0;
+    for (let i = heard.length - 1; i >= 0 && heard[i].has(id); i--) run++;
+    if (run > 0) running.push(`${INSTRUMENTS[id].name} (${run} phrase${run === 1 ? '' : 's'} running)`);
+    else {
+      let since = -1;
+      for (let i = heard.length - 1; i >= 0; i--) if (heard[i].has(id)) { since = heard.length - 1 - i; break; }
+      resting.push(`${INSTRUMENTS[id].name} (${since < 0 ? 'not yet heard' : `silent ${since} phrase${since === 1 ? '' : 's'}`})`);
+    }
+  }
+  const sizes = heard.map((h) => h.size);
+  const most = Math.max(...sizes);
+  return `PLAYED  sounding in the last phrase: ${running.join(', ') || 'nothing'}; resting: ${resting.join(', ') || 'none'}; fullest phrase so far: phrase ${sizes.indexOf(most) + 1} with ${most} instruments`;
+}
+
+/** The level the last phrase left off at (its dynamic curve's end, if it had one). */
+function lastLevel(piece: Piece): number | null {
+  const last = piece.phrases[piece.phrases.length - 1];
+  if (!last) return null;
+  const curve = last.score.dynCurve;
+  return curve?.length ? curve[curve.length - 1].step : last.mix.dynamics;
+}
+
+/** Overall dynamics moving inside the phrase, from the shape Drex chose and the level `to` it set. */
+function dynamicCurve(shape: string, to: number, from: number | null, beats: number): { beat: number; step: number }[] | undefined {
+  const prev = from ?? to;
+  if (shape === 'crescendo') {
+    const start = clamp(Math.min(prev, to - 1), 0, 6);
+    return start < to ? [{ beat: 0, step: start }, { beat: beats, step: to }] : undefined;
+  }
+  if (shape === 'diminuendo') {
+    const start = prev > to ? prev : to;
+    const end = prev > to ? to : Math.max(0, to - 1);
+    return start > end ? [{ beat: 0, step: start }, { beat: beats, step: end }] : undefined;
+  }
+  if (shape === 'swell') {
+    const low = Math.max(0, to - 1);
+    return low < to ? [{ beat: 0, step: low }, { beat: beats / 2, step: to }, { beat: beats, step: low }] : undefined;
+  }
+  return undefined;
+}
+
 // ───────────────────────────── Questions ─────────────────────────────
 
 interface LayerChoice {
@@ -86,11 +149,30 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
   const arrival = piece.plan.climaxArrival;
   const atClimax = index === piece.plan.climaxPhrase;
   const wall = atClimax && isWall(arrival);
+  // The drop (beat-driven) is the other fixed arrival: every layer in, full volume, the filter open.
+  const drop = atClimax && arrival === 'drop';
+  const peak = wall || drop;
 
-  if (!wall) questions.push({
+  if (!peak) questions.push({
     id: 'overall_dynamics', type: 'score', label: 'Overall dynamics',
     instructions: `How loud is this phrase overall? Target tension is ${t} of 7.`,
     levels: DYNAMIC_LEVELS, prior: overall, spread: 0.6,
+  });
+  // One decision for how full the phrase is. Asked layer by layer, each yes/no sat near even and the
+  // cut-off thinned the texture at random; asked once, Drex's answer follows the tension curve (measured live).
+  if (!drop) questions.push({
+    id: 'density', type: 'score', label: 'How full the texture is',
+    instructions: `How full should the texture of this phrase be: how many supporting layers (counter-melody, inner harmony, bass, pedal, figuration, texture, pulse) play under the melody? Target tension is ${t} of 7.`,
+    levels: [
+      'the melody alone, nothing under it',
+      'the melody and one supporting layer: bare, intimate',
+      'the melody and two supporting layers: a light texture',
+      'three supporting layers: a full, warm texture',
+      'four supporting layers: rich',
+      'five supporting layers: dense, the whole ensemble at work',
+      'every layer available: the fullest texture of the piece',
+    ],
+    prior: clamp((t - 1) * 0.9, 0, 6), spread: 0.7,
   });
 
   const inPrior: Record<LayerRole, number> = {
@@ -134,14 +216,57 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     if (role === 'coda' && r !== 'melody') p *= 0.75;
     questions.push({
       id: `${r}_in`, type: 'noul', label: `${r}: in`,
+      // For the supporting layers these answers rank which ones fill the places the density answer allows.
       instructions: `Should ${LAYER_JOB[r]} play in this phrase?${forced ? ' (The direction for this phrase already calls for it.)' : ''} ${was(r) ? 'It played in the previous phrase.' : 'It was silent in the previous phrase.'}`,
       prior: forced ? 0.98 : clamp(p, 0.02, 0.98),
     });
-    questions.push({
+    if (r === 'melody') {
+      // Instrument and register are one choice, so each option can state where the line would really
+      // sit: how far it starts from where the last phrase ended, and how its top compares with the highest note so far.
+      const facts = melodyFacts(piece);
+      const semis = (n: number) => `${Math.abs(n)} semitone${Math.abs(n) === 1 ? '' : 's'}`;
+      const REG: [string, number, string, number][] = [
+        ['low', -1, 'dark, close, private', 0.2 + (t <= 2 ? 0.5 : 0) + (role === 'coda' ? 0.5 : 0) + (level('low') ? 0.9 : 0)],
+        ['middle', 0, 'natural, singing', 1.2],
+        ['high', 1, 'bright, exposed, soaring', -0.5 + t * 0.22 + (role === 'climax' ? 1.4 : 0) + (level('high', 'airborne') ? 1 : 0)],
+      ];
+      const seen = new Set<string>();
+      const options: ChoiceOption[] = [];
+      for (const id of pool) {
+        for (const [reg, oct, feel, regPrior] of REG) {
+          const placed = placeLine(draft.line, draft.key, id, oct);
+          if (!placed.length) continue;
+          const lo = Math.min(...placed.map((n) => n.midi));
+          const hi = Math.max(...placed.map((n) => n.midi));
+          if (seen.has(`${id}:${lo}:${hi}`)) continue; // a narrow instrument: this register lands where another already did
+          seen.add(`${id}:${lo}:${hi}`);
+          const leap = facts.lastEnd === null ? null : placed[0].midi - facts.lastEnd;
+          const join = leap === null ? ''
+            : leap === 0 ? ' It starts on the very note the last phrase ended on.'
+              : ` It starts ${semis(leap)} ${leap > 0 ? 'above' : 'below'} the note the last phrase's melody ended on${Math.abs(leap) > 12 ? ' (more than an octave away)' : ''}.`;
+          const peak = !facts.top ? ''
+            : ` Its top note, ${midiName(hi, draft.key)}, is ${hi === facts.top.midi ? 'the same as' : `${semis(hi - facts.top.midi)} ${hi > facts.top.midi ? 'above' : 'below'}`} the highest melody note so far (${midiName(facts.top.midi, draft.key)}, phrase ${facts.top.phrase}).`;
+          let prior = (instPrefer.melody[id] ?? -0.3) + regPrior + (role === 'return' && lastInst('melody') === id ? -1 : 0);
+          if (leap !== null && Math.abs(leap) > 12) prior -= 1.2;
+          if (atClimax && facts.top && hi > facts.top.midi) prior += 1;
+          options.push(opt(`${id}__${reg}`, `${INSTRUMENTS[id].name}, ${reg}`,
+            `${INSTRUMENTS[id].name} (${INSTRUMENTS[id].character}), ${reg} register (${feel}): ${midiName(lo, draft.key)} to ${midiName(hi, draft.key)}.${join}${peak}`, prior));
+        }
+      }
+      if (!options.length) for (const id of pool) options.push(opt(`${id}__middle`, INSTRUMENTS[id].name, `${INSTRUMENTS[id].name}: ${INSTRUMENTS[id].character}`, instPrefer.melody[id] ?? -0.3));
+      const climaxAt = piece.plan.climaxPhrase;
+      const where = index < climaxAt ? `The climax is phrase ${climaxAt + 1}, ${climaxAt - index} phrase${climaxAt - index === 1 ? '' : 's'} from now.`
+        : index === climaxAt ? 'This phrase is the climax.' : `The climax has passed (it was phrase ${climaxAt + 1}).`;
+      questions.push({
+        id: 'melody_voice', type: 'choice', label: 'melody: instrument and register',
+        instructions: `Which instrument should take the melody, and in which register? ${where}`,
+        options,
+      });
+    } else questions.push({
       id: `${r}_inst`, type: 'choice', label: `${r}: instrument`,
       instructions: `Which instrument should take ${LAYER_JOB[r]}?`,
       options: pool.map((id) => opt(id, INSTRUMENTS[id].name, `${INSTRUMENTS[id].name}: ${INSTRUMENTS[id].character}`,
-        (instPrefer[r][id] ?? -0.3) + (lastInst(r) === id && r !== 'melody' ? 0.5 : 0) + (r === 'melody' && role === 'return' && lastInst(r) === id ? -1 : 0))),
+        (instPrefer[r][id] ?? -0.3) + (lastInst(r) === id ? 0.5 : 0))),
     });
     const offset: Record<string, number> = { melody: 0.5, counter: -0.5, inner: -1, bass: -0.4, pedal: -1.5, figuration: -1, texture: -1.6, pulse: 0 };
     questions.push({
@@ -161,15 +286,26 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
   }
 
   // Melody details.
-  questions.push({
-    id: 'melody_register', type: 'choice', label: 'melody: register',
-    instructions: 'Which register should the melody sit in?',
-    options: [
-      opt('low', 'low', 'low: dark, close, private', 0.2 + (t <= 2 ? 0.5 : 0) + (role === 'coda' ? 0.5 : 0) + (level('low') ? 0.9 : 0)),
-      opt('middle', 'middle', 'middle: natural, singing', 1.2),
-      opt('high', 'high', 'high: bright, exposed, soaring', -0.5 + t * 0.22 + (role === 'climax' ? 1.4 : 0) + (level('high', 'airborne') ? 1 : 0)),
-    ],
-  });
+  const doublers = [...new Set([...ROLE_INSTRUMENTS.melody, ...ROLE_INSTRUMENTS.counter])].filter((id) => rules.palette.includes(id));
+  if (doublers.length >= 2) {
+    questions.push({
+      id: 'melody_double', type: 'choice', label: 'melody: doubled by',
+      instructions: 'Should a second instrument play the melody together with the first, and if so which?',
+      options: [
+        opt('none', 'no doubling', 'no doubling: the melody on one instrument alone, its own pure colour, free to be expressive', 1.6 - Math.max(0, t - 3) * 0.55),
+        ...doublers.map((id) => opt(id, INSTRUMENTS[id].name, `${INSTRUMENTS[id].name} joins the melody: ${INSTRUMENTS[id].character}`, -0.5 + (t >= 5 ? 0.9 : 0) + (instPrefer.melody[id] ?? 0) * 0.3)),
+      ],
+    });
+    questions.push({
+      id: 'melody_double_at', type: 'choice', label: 'melody: doubling at',
+      instructions: 'If the melody is doubled, where does the second instrument play it?',
+      options: [
+        opt('unison', 'unison', 'in unison: one thicker, sweeter voice', 1),
+        opt('octave_above', 'octave above', 'an octave above: brilliance on top of the line', t >= 5 ? 0.9 : 0.2),
+        opt('octave_below', 'octave below', 'an octave below: body and warmth under the line', 0.6),
+      ],
+    });
+  }
   if (!wall) questions.push({
     id: 'melody_style', type: 'choice', label: 'melody: playing style',
     instructions: 'How should the melody be played?',
@@ -252,7 +388,10 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
   questions.push({
     id: 'pulse_pattern', type: 'choice', label: 'pulse: pattern',
     instructions: 'Which pulse pattern?',
-    options: [
+    options: ([
+      opt('trap', 'trap', 'trap: half time with the snare on beat three, sparse syncopated kicks, fast hi-hats that roll into the bar line', 1.6),
+      opt('boom_bap', 'boom-bap', 'boom-bap: swung hats, kick and snare trading blows, heavy and unhurried', 1.6),
+      opt('funk', 'funk', 'funk: sixteenth-note hats, syncopated kick, snare on two and four with ghost notes between', 1.6),
       opt('four_on_floor', 'four on the floor', 'a kick on every beat: driving, dance', beat ? 1.2 + (t >= 4 ? 0.5 : 0) : -0.3),
       opt('backbeat', 'backbeat', 'kick on one and three, snare on two and four: a groove', beat ? 1 : play ? 0.9 : -0.2),
       opt('half_time', 'half time', 'half time: one kick, one snare per bar; heavy, spacious', beat ? 0.6 + (t <= 3 ? 0.6 : 0) : 0),
@@ -260,8 +399,21 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
       opt('heartbeat', 'heartbeat', 'a soft double thump at the start of each bar: a heartbeat under the music', orch ? 0.9 : 0.3 + (t <= 3 ? 0.6 : 0)),
       opt('downbeats', 'downbeats', 'one stroke on each downbeat: solemn, processional', orch ? 1 : 0),
       opt('roll_to_downbeat', 'roll to the downbeat', 'a roll swelling through the last bar into the next downbeat: arrival', orch ? 0.7 + (t >= 6 ? 0.8 : 0) : 0),
-    ],
+    ] as ChoiceOption[]).filter((o) => (rules.groove ? GROOVES[rules.groove].patterns.includes(o.key) : !['trap', 'boom_bap', 'funk'].includes(o.key))),
   });
+  if (beat) {
+    const g = rules.groove;
+    questions.push({
+      id: 'bass_rhythm', type: 'choice', label: 'bass: rhythm',
+      instructions: 'What rhythm should the bass play?',
+      options: [
+        opt('held', 'held', 'held: one long note per chord: weight without motion', 0.6 + (t <= 3 ? 0.8 : 0)),
+        opt('eighths', 'pumping eighths', 'pumping eighth notes on the chord root: drive, the engine of dance and pop', g === 'house' || g === 'pop' ? 1.5 : 0.3),
+        opt('with_kick', 'with the kick', 'hits with every kick and rings until the next: the 808 way, bass and kick as one instrument', g === 'trap' || g === 'boom_bap' ? 1.7 : 0.5),
+        opt('syncopated', 'syncopated', 'a syncopated sixteenth-note figure with octave pops: funk, the bass as a second drummer', g === 'funk' ? 1.8 : 0.1),
+      ],
+    });
+  }
   questions.push({
     id: 'pulse_intensity', type: 'score', label: 'pulse: intensity',
     instructions: 'How busy and forceful should the pulse be?',
@@ -320,6 +472,47 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     });
   }
 
+  // How the phrase moves inside itself: who drops out, where it breathes, how the level moves.
+  const sectionEnd = index === piece.sectionOf(index).last;
+  const finalPhrase = index === piece.plan.totalPhrases - 1;
+  const wallNext = index === piece.plan.climaxPhrase - 1 && arrivesAfterBreath(arrival);
+  if (!peak) {
+    questions.push({
+      id: 'texture_shape', type: 'choice', label: 'texture inside the phrase',
+      instructions: 'How should the texture move inside this phrase? Instruments need not play all the way through.',
+      options: [
+        opt('full', 'full', 'every chosen layer plays through the whole phrase', 1.4),
+        opt('late_entry', 'late entry', 'the melody and bass begin alone; the rest of the accompaniment waits and enters at the half: space first, then warmth', 0.5 + (t <= 3 ? 0.4 : 0)),
+        opt('drop_out', 'drop out', 'the accompaniment falls away at the half, leaving melody and bass exposed: a sudden clearing', 0.3),
+        opt('bare_ending', 'bare ending', 'everything but the melody stops for the last bar: the line is left alone in the air', 0.3 + (sectionEnd ? 0.5 : 0)),
+      ],
+    });
+  }
+  if (!wallNext && !finalPhrase) {
+    questions.push({
+      id: 'phrase_close', type: 'choice', label: 'how the phrase closes',
+      instructions: 'How should this phrase close before the next one begins?',
+      options: [
+        opt('run_on', 'run on', 'runs straight on into the next phrase: momentum, no punctuation', 0.8 + (t >= 5 ? 0.6 : 0)),
+        opt('melody_breathes', 'melody breathes', 'the melody lifts off a beat early while the accompaniment carries on underneath: a comma', 0.9),
+        opt('all_breathe', 'everyone breathes', 'everything stops for a moment just before the bar line, only the hall still ringing: a full stop the listener can feel', 0.4 + (sectionEnd ? 0.9 : 0)),
+        opt('long_silence', 'long silence', 'everything stops for the whole last half-bar: a long held silence before the music goes on', sectionEnd && t <= 3 ? 0.6 : -0.4),
+      ],
+    });
+  }
+  const lastT = last ? last.score.display.tension : t;
+  const before = lastLevel(piece);
+  questions.push({
+    id: 'dynamic_shape', type: 'choice', label: 'dynamics inside the phrase',
+    instructions: `How should the overall dynamic move inside this phrase?${before === null ? '' : ` The last phrase left off at ${DYNAMIC_NAMES[clamp(Math.round(before), 0, 6)]}.`}`,
+    options: [
+      opt('steady', 'steady', 'steady: one level throughout; any change from the last phrase happens at once, at the bar line', 1),
+      ...(peak ? [] : [opt('crescendo', 'crescendo', 'crescendo: grows through the whole phrase, from where the last phrase left off up to this phrase\'s dynamic', t > lastT + 0.3 ? 1.6 : 0.2)]),
+      opt('diminuendo', 'diminuendo', 'diminuendo: falls through the phrase; from the last phrase\'s level down to this one if that was louder, otherwise fading about one level by the end', t < lastT - 0.3 ? 1.5 : role === 'coda' ? 0.9 : 0.1),
+      ...(peak ? [] : [opt('swell', 'swell', 'swell: rises to this phrase\'s dynamic in the middle and falls back by the end, like one breath', 0.6)]),
+    ],
+  });
+
   // Effects.
   const sub = rules.soundWorld === 'submerged';
   const fx: [keyof MixState & string, string, string, number][] = [
@@ -331,7 +524,7 @@ function buildQuestions(ctx: Ctx, index: number, draft: Draft): { questions: Que
     ['saturation', 'Saturation', 'How much saturation? (a little = warmth; a lot = grit)', beat ? 1.6 + t * 0.35 : 0.6 + (t >= 6 ? 1 : 0)],
   ];
   for (const [id, label, text, prior] of fx) {
-    if (wall && id === 'lowpass') continue; // the wall opens the filter fully
+    if (peak && id === 'lowpass') continue; // the wall and the drop open the filter fully
     questions.push({ id: `fx_${id}`, type: 'score', label, instructions: text, levels: AMOUNT_LEVELS, prior: clamp(prior, 0, 6), spread: 0.6 });
   }
   questions.push({ id: 'fx_chorus', type: 'noul', label: 'Chorus', instructions: 'Should chorus thicken the pads and strings in this phrase?', prior: beat ? 0.6 : 0.12 + (t >= 5 ? 0.15 : 0) });
@@ -361,7 +554,7 @@ function artFor(inst: InstrumentId, wanted: Articulation): Articulation {
   return arts[0];
 }
 
-function drumBar(pattern: string, intensity: number, bar: number, sub: 2 | 3, lastBar: boolean): { t: number; midi: number; vel: number }[] {
+function drumBar(pattern: string, intensity: number, bar: number, sub: 2 | 3, lastBar: boolean, barIndex = 0): { t: number; midi: number; vel: number }[] {
   const out: { t: number; midi: number; vel: number }[] = [];
   const v = 0.45 + intensity * 0.075;
   const beats = Math.floor(bar + 1e-6);
@@ -375,7 +568,37 @@ function drumBar(pattern: string, intensity: number, bar: number, sub: 2 | 3, la
   const offbeat = sub === 3 ? 2 / 3 : 0.5;
   const fine = sub === 3 ? 1 / 3 : intensity >= 4 ? 0.25 : 0.5;
   const back = beats >= 4 ? [1, 3] : beats === 3 ? [2] : [1];
+  // The hip-hop and funk grooves are written for simple meters; in a compound meter they fall back to a backbeat.
+  if (sub === 3 && ['trap', 'boom_bap', 'funk'].includes(pattern)) pattern = 'backbeat';
+  const odd = barIndex % 2 === 1;
+  const hat = (t: number, s: number, midi = HAT) => t < bar - 1e-6 && out.push({ t: q(t), midi, vel: v * s });
   switch (pattern) {
+    case 'trap': {
+      kick(0); if (odd) kick(0.75, 0.8); kick(2.5, 0.85); if (intensity >= 4) kick(3.25, 0.7);
+      snare(beats >= 4 ? 2 : beats - 1);
+      // fast hats, breaking into a roll over the last beat of every second bar
+      const rolls = intensity >= 2 && (odd || lastBar);
+      const stepH = intensity >= 3 ? 0.25 : 0.5;
+      for (let i = 0; i * stepH < (rolls ? bar - 1 : bar) - 1e-6; i++) hat(i * stepH, (i * stepH) % 1 < 1e-6 ? 0.6 : 0.36);
+      if (rolls) { const r = intensity >= 5 ? 1 / 12 : 1 / 6; for (let k = 0; k * r < 1 - 1e-6; k++) hat(bar - 1 + k * r, 0.3 + 0.35 * k * r); }
+      if (intensity >= 4) hat(1.5, 0.5, OPEN);
+      break;
+    }
+    case 'boom_bap': {
+      const sw = 2 / 3; // the off-beat, swung late
+      kick(0); if (odd) { kick(1 + sw, 0.75); kick(2, 0.9); } else kick(2 + sw, 0.9);
+      if (intensity >= 4) kick(3 + sw, 0.55);
+      back.forEach((b) => snare(b));
+      for (let b = 0; b < beats; b++) { hat(b, 0.6); hat(b + sw, 0.4); }
+      break;
+    }
+    case 'funk': {
+      kick(0); kick(0.75, 0.7); kick(2.5, 0.9); if (odd) kick(3.25, 0.7);
+      back.forEach((b) => snare(b));
+      if (intensity >= 3) { snare(1.75, 0.3); snare(2.25, 0.3); snare(3.75, 0.35); } // ghost notes
+      for (let i = 0; i * 0.25 < bar - 1e-6; i++) { const t = i * 0.25; if (intensity >= 4 && Math.abs(t - (bar - 0.5)) < 1e-6) hat(t, 0.55, OPEN); else hat(t, i % 2 === 0 ? 0.6 : 0.32); }
+      break;
+    }
     case 'four_on_floor':
       for (let b = 0; b < beats; b++) kick(b);
       if (intensity >= 3) back.forEach((b) => snare(b, 0.85));
@@ -418,6 +641,8 @@ interface Written {
   layers: LayerSummary[];
   mix: MixState;
   holdChord: HoldNote[];
+  /** What happened inside the phrase, for the lineage line on the panel. */
+  remarks: string[];
 }
 
 function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Record<string, number>, offered: Record<LayerRole, InstrumentId[]>): Written {
@@ -467,6 +692,9 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
     const base = velOf(mel.dyn);
     const top = Math.max(...melodyNotes.map((n) => n.midi));
     const responder = flags.call_response ? ((picks.response_inst as InstrumentId) ?? null) : null;
+    const partner = picks.melody_double && picks.melody_double !== 'none' && picks.melody_double !== mel.inst && rules.palette.includes(picks.melody_double as InstrumentId)
+      ? (picks.melody_double as InstrumentId) : null;
+    const partnerShift = picks.melody_double_at === 'octave_above' ? 12 : picks.melody_double_at === 'octave_below' ? -12 : 0;
     for (const n of melodyNotes) {
       const shape = 0.9 + 0.16 * Math.sin((Math.PI * n.t) / beats);
       const strong = rules.meter.strong.includes(q(n.t % bar)) ? 0.03 : 0;
@@ -481,8 +709,10 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
         const [lo, hi] = INSTRUMENTS[inst].range;
         if (other >= lo && other <= hi) push('melody', inst, useArt, n.t, n.dur, other, vel * 0.82);
       }
+      // A second instrument plays the melody with the first.
+      if (partner) push('melody', partner, artFor(partner, art), n.t, n.dur, fold(midi + partnerShift, partner), vel * 0.85);
     }
-    mel.detail = `${picks.melody_register ?? 'middle'} register${flags.octave_doubling ? `, doubled ${picks.doubling ?? 'above'}` : ''}${responder && responder !== mel.inst ? `, answered by ${INSTRUMENTS[responder].name}` : ''}`;
+    mel.detail = `${picks.melody_register ?? 'middle'} register${flags.octave_doubling ? `, doubled ${picks.doubling ?? 'above'}` : ''}${responder && responder !== mel.inst ? `, answered by ${INSTRUMENTS[responder].name}` : ''}${partner ? `, doubled by ${INSTRUMENTS[partner].name}${partnerShift ? ` an octave ${partnerShift > 0 ? 'above' : 'below'}` : ' in unison'}` : ''}`;
   }
 
   // ── Counter-melody ──
@@ -602,12 +832,40 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
     if (drop) m = m - 12 >= lo ? m - 12 : m;
     return fold(m, inst);
   };
+  const pulsePattern = picks.pulse_pattern ?? 'downbeats';
+  const pulseIntensity = step('pulse_intensity');
   if (bass.on && bass.inst) {
     const low = picks.bass_octave === 'low';
+    const rhythm = picks.bass_rhythm ?? 'held';
     bass.art = 'sustain';
-    bass.detail = `${[...new Set(draft.slots.map((s) => s.bass.replace('_', ' ')))].join(', ')}${low ? ', low octave' : ''}`;
+    bass.detail = `${[...new Set(draft.slots.map((s) => s.bass.replace('_', ' ')))].join(', ')}${low ? ', low octave' : ''}${rhythm !== 'held' ? `, ${rhythm.replace(/_/g, ' ')}` : ''}`;
     const base = velOf(bass.dyn);
-    for (const n of bassNotes) push('bass', bass.inst, 'sustain', n.t, n.dur, bassMidi(n.pc, bass.inst, low), base);
+    if (rhythm === 'held') {
+      for (const n of bassNotes) push('bass', bass.inst, 'sustain', n.t, n.dur, bassMidi(n.pc, bass.inst, low), base);
+    } else {
+      // A rhythmic bass: the chord path still says which note; the rhythm says when it is struck.
+      const noteAt = (at: number) => bassNotes.find((n) => at >= n.t - 1e-6 && at < n.t + n.dur - 1e-6) ?? bassNotes[bassNotes.length - 1];
+      for (let b = 0; b < bars; b++) {
+        let hits: number[];
+        if (rhythm === 'eighths') hits = Array.from({ length: Math.round(bar * 2) }, (_x, i) => i * 0.5);
+        else if (rhythm === 'syncopated') hits = [0, 0.75, 1.5, 2.5, 3, 3.5].filter((x) => x < bar - 1e-6);
+        else {
+          hits = drumBar(pulsePattern, pulseIntensity, bar, rules.meter.sub, b === bars - 1, b).filter((h) => h.midi === 36).map((h) => h.t);
+          if (!hits.length) hits = [0];
+        }
+        hits = [...new Set(hits.map(q))].sort((x, y) => x - y);
+        hits.forEach((h, i) => {
+          const at = b * bar + h;
+          const until = b * bar + (hits[i + 1] ?? bar);
+          const n = noteAt(at);
+          const pc = n.pc < 0 ? -1 - n.pc : n.pc;
+          const pop = rhythm === 'syncopated' && (Math.abs(h - 1.5) < 1e-6 || Math.abs(h - 3.5) < 1e-6);
+          const dur = rhythm === 'with_kick' ? until - at : Math.min(until - at, rhythm === 'eighths' ? 0.42 : 0.5);
+          const midi = bassMidi(pc, bass.inst!, low);
+          push('bass', bass.inst!, 'sustain', at, dur, pop && midi + 12 <= INSTRUMENTS[bass.inst!].range[1] ? midi + 12 : midi, base * (i === 0 ? 1 : 0.9));
+        });
+      }
+    }
   }
 
   // ── Pedal ──
@@ -683,18 +941,20 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
   // ── Pulse ──
   const pul = chosen.pulse;
   if (pul.on && pul.inst) {
-    const pattern = picks.pulse_pattern ?? 'downbeats';
-    const intensity = step('pulse_intensity');
+    const pattern = pulsePattern;
+    const intensity = pulseIntensity;
     const gain = velOf(pul.dyn) / velOf(3);
     pul.art = 'hit';
     pul.detail = `${pattern.replace(/_/g, ' ')}, intensity ${intensity + 1}/7`;
     for (let b = 0; b < bars; b++) {
       const t0 = b * bar;
-      const hits = drumBar(pattern, intensity, bar, rules.meter.sub, b === bars - 1);
+      const hits = drumBar(pattern, intensity, bar, rules.meter.sub, b === bars - 1, b);
       if (pul.inst === 'drumkit') {
         for (const h of hits) push('pulse', 'drumkit', 'hit', t0 + h.t, 0.25, h.midi, h.vel * gain);
       } else if (pul.inst === 'kick808') {
         for (const h of hits.filter((x) => x.midi === 36)) push('pulse', 'kick808', 'hit', t0 + h.t, 0.5, 36, h.vel * gain);
+        // The 808 is only a kick: with a drum kit in the palette, the kit plays the snare and hats around it.
+        if (rules.palette.includes('drumkit')) for (const h of hits.filter((x) => x.midi !== 36)) push('pulse', 'drumkit', 'hit', t0 + h.t, 0.25, h.midi, h.vel * gain);
       } else {
         // Timpani: strokes on the kick positions, tonic on the downbeat and the dominant elsewhere; a roll for the last bar.
         const tonic = fold(pcIn(key.tonic, 41), 'timpani');
@@ -763,6 +1023,24 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
     acc.detail += ', after a pause';
   }
 
+  // ── Texture inside the phrase: instruments need not play all the way through ──
+  const remarks: string[] = [];
+  const keepOnly = (layers: LayerRole[], from: number, to: number) => {
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const n = notes[i];
+      if (!layers.includes(n.layer)) continue;
+      const a = Math.max(n.t, from);
+      const b = Math.min(n.t + n.dur, to);
+      const struck = n.art !== 'sustain' && n.art !== 'tremolo'; // a short note cut off at the front would move its attack
+      if (b - a <= 1e-6 || (struck && n.t < from - 1e-6)) notes.splice(i, 1);
+      else { n.t = q(a); n.dur = q(b - a); }
+    }
+  };
+  const ACCOMPANIMENT: LayerRole[] = ['counter', 'inner', 'figuration', 'texture', 'pulse'];
+  if (picks.texture_shape === 'late_entry') { keepOnly(ACCOMPANIMENT, unit, beats); remarks.push('accompaniment enters at the half'); }
+  else if (picks.texture_shape === 'drop_out') { keepOnly(ACCOMPANIMENT, 0, unit); remarks.push('accompaniment drops out at the half'); }
+  else if (picks.texture_shape === 'bare_ending') { keepOnly([...ACCOMPANIMENT, 'bass', 'pedal'], 0, beats - bar); remarks.push('melody alone in the last bar'); }
+
   // ── Entries ──
   for (const r of LAYERS) {
     const c = chosen[r];
@@ -812,7 +1090,7 @@ function write(ctx: Ctx, index: number, draft: Draft, picks: Picks, values: Reco
     return { role: r, inst: c.on ? c.inst : null, dynamics: c.dyn, art: c.on ? c.art : null, entry: c.entry, detail: c.on ? c.detail : undefined };
   });
   notes.sort((a, b) => a.t - b.t);
-  return { notes, pedal, layers, mix, holdChord };
+  return { notes, pedal, layers, mix, holdChord, remarks };
 }
 
 /** Length of a held breath in beats: about half a second, at least one subdivision, at most a beat. */
@@ -820,14 +1098,16 @@ function breathBeats(piece: Piece, index: number): number {
   return clamp(q((0.55 * piece.bpmOf(index)) / 60), piece.rules.meter.sub === 3 ? 1 / 3 : 0.5, 1);
 }
 
-/** The held breath before a wall: everything stops just before the bar line (the hall still rings). */
-function holdBreath(piece: Piece, index: number, w: Written): void {
-  const from = piece.beatsOf(index) - breathBeats(piece, index);
+/** A breath at the end of a phrase: the given layers (default all) stop `gap` beats before the bar line. The hall still rings. */
+function holdBreath(piece: Piece, index: number, w: Written, gap: number, only?: LayerRole[]): void {
+  const from = piece.beatsOf(index) - gap;
   for (let i = w.notes.length - 1; i >= 0; i--) {
     const n = w.notes[i];
+    if (only && !only.includes(n.layer)) continue;
     if (n.t >= from - 1e-6) w.notes.splice(i, 1);
     else if (n.t + n.dur > from) n.dur = q(from - n.t);
   }
+  if (only) return;
   w.pedal = w.pedal.filter((p) => p.t < from);
   if (w.pedal.length) w.pedal.push({ t: q(from), down: false });
 }
@@ -839,7 +1119,10 @@ export async function orchestrate(ctx: Ctx, index: number, draft: Draft): Promis
   const { questions, offered } = buildQuestions(ctx, index, draft);
   const arrival = piece.plan.climaxArrival;
   const wall = index === piece.plan.climaxPhrase && isWall(arrival);
-  const breath = index === piece.plan.climaxPhrase - 1 && isWall(arrival);
+  const drop = index === piece.plan.climaxPhrase && arrival === 'drop';
+  const breath = index === piece.plan.climaxPhrase - 1 && arrivesAfterBreath(arrival);
+  const played = playedFacts(piece);
+  const levelBefore = lastLevel(piece);
   const ans = await gw.ask({
     callType: 'orchestration', title: `Phrase ${index + 1}: orchestration and mix`,
     state: piece.state('orchestration', index, [
@@ -847,24 +1130,55 @@ export async function orchestrate(ctx: Ctx, index: number, draft: Draft): Promis
       `CHORDS  ${draft.slots.map((s) => `${chordName(s.chord, draft.key)} (bass: ${s.bass.replace('_', ' ')})`).join(' | ')}; key ${keyName(draft.key)}`,
       `PALETTE ${piece.rules.palette.map((id) => INSTRUMENTS[id].name).join(', ')}`,
       ...(wall ? [`ARRIVAL this phrase is the climax, and the plan has it arrive as: ${ARRIVAL_LABEL[arrival]}. Already decided by that choice: overall dynamics fff, filter fully open, no pulse and no figuration, everything sustained.`] : []),
-      ...(breath ? ['ARRIVAL the next phrase is the climax, arriving after a held breath: this phrase stops just before its final bar line.'] : []),
+      ...(drop ? ['ARRIVAL this phrase is the climax, and the plan has it arrive as the drop. Already decided by that choice: every layer plays, overall dynamics fff, filter fully open.'] : []),
+      ...(breath ? [`ARRIVAL the next phrase is the climax, arriving after a held breath: this phrase stops just before its final bar line${arrival === 'drop' ? ', and only the melody plays through its last bar' : ''}.`] : []),
+      ...(played ? [played] : []),
     ]),
     questions, picking: 'top',
   });
   // Melody and counter-melody are separate questions. If Drex gives both to the same instrument,
   // the counter-melody goes to its next most probable choice so the two lines stay distinct.
   const picks = ans.picks[0];
+  if (drop) picks.density = '6';
+  // Density is a floor, never a cap. Every supporting layer Drex said yes to plays; if that is fewer
+  // than the density it chose, the layers it rated next most likely fill the remaining places.
+  // Layers the phrase direction already calls for (a pedal underlay, an overlapping entry) are in first.
+  if (picks.density !== undefined) {
+    const flags = draft.direction.flags;
+    const supporting = (['counter', 'inner', 'bass', 'pedal', 'figuration', 'texture', 'pulse'] as LayerRole[]).filter((r) => picks[`${r}_in`] !== undefined);
+    const called = supporting.filter((r) => (r === 'pedal' && flags.pedal_underlay) || (r === 'counter' && flags.overlap));
+    const rest = supporting.filter((r) => !called.includes(r)).sort((a, b) => ans.values[`${b}_in`] - ans.values[`${a}_in`]);
+    const places = Number(picks.density) >= 6 ? supporting.length : Number(picks.density);
+    const on = new Set<LayerRole>([...called, ...supporting.filter((r) => ans.values[`${r}_in`] >= 0.5), ...rest.slice(0, Math.max(0, places - called.length))]);
+    for (const r of supporting) picks[`${r}_in`] = on.has(r) ? 'yes' : 'no';
+  }
+  // The melody's instrument and register were one question.
+  if (picks.melody_voice) [picks.melody_inst, picks.melody_register] = picks.melody_voice.split('__');
+  // A doubling instrument has to be a second instrument: if Drex named the melody's own, take its next choice.
+  if (picks.melody_double && picks.melody_double === picks.melody_inst) {
+    const next = Object.entries(ans.probabilities.melody_double ?? {}).sort((a, b) => b[1] - a[1]).find(([id]) => id !== picks.melody_inst);
+    picks.melody_double = next ? next[0] : 'none';
+  }
   if (picks.counter_inst && picks.counter_inst === picks.melody_inst && picks.melody_in === 'yes') {
     const next = Object.entries(ans.probabilities.counter_inst ?? {}).sort((a, b) => b[1] - a[1]).find(([id]) => id !== picks.melody_inst);
     if (next) picks.counter_inst = next[0];
   }
   // The wall is what Drex chose in the plan: full volume, the filter fully open.
-  if (wall) {
+  if (wall || drop) {
     picks.overall_dynamics = '6';
     picks.fx_lowpass = '6';
   }
   const w = write(ctx, index, draft, picks, ans.values, offered);
-  if (breath) holdBreath(piece, index, w);
+  // How the phrase closes: the breath before a wall, or the close Drex chose.
+  const bar = piece.rules.meter.beatsPerBar;
+  // Before a drop the beat thins first: only the melody plays through the last bar.
+  if (breath && arrival === 'drop') holdBreath(piece, index, w, bar, ['counter', 'inner', 'bass', 'pedal', 'figuration', 'texture', 'pulse', 'accents']);
+  if (breath) holdBreath(piece, index, w, breathBeats(piece, index));
+  else if (picks.phrase_close === 'melody_breathes') { holdBreath(piece, index, w, 1, ['melody']); w.remarks.push('the melody breathes before the bar line'); }
+  else if (picks.phrase_close === 'all_breathe') { holdBreath(piece, index, w, breathBeats(piece, index)); w.remarks.push('everyone breathes before the bar line'); }
+  else if (picks.phrase_close === 'long_silence') { holdBreath(piece, index, w, bar / 2); w.remarks.push('a long silence closes the phrase'); }
+  const dynCurve = dynamicCurve(picks.dynamic_shape ?? 'steady', w.mix.dynamics, levelBefore, piece.beatsOf(index));
+  if (dynCurve) w.remarks.push(picks.dynamic_shape);
   const holdSec = piece.phraseHoldSec.get(index) ?? 0;
   const section = piece.sectionOf(index);
   const role = piece.roleOf(index);
@@ -872,10 +1186,11 @@ export async function orchestrate(ctx: Ctx, index: number, draft: Draft): Promis
     index, section: section.index, role,
     bars: piece.barsOf(index), beatsPerBar: piece.rules.meter.beatsPerBar, beats: piece.beatsOf(index), bpm: piece.bpmOf(index),
     notes: w.notes, pedal: w.pedal, mix: w.mix, holdChord: w.holdChord,
+    ...(dynCurve ? { dynCurve } : {}),
     display: {
       key: keyName(draft.key),
       notation: notation(draft.line),
-      lineage: `phrase ${index + 1} = ${draft.lineage}${wall ? `; the climax arrives: ${ARRIVAL_LABEL[arrival]}` : breath ? '; ends on a held breath' : ''}`,
+      lineage: `phrase ${index + 1} = ${draft.lineage}${wall || drop ? `; the climax arrives: ${ARRIVAL_LABEL[arrival]}` : breath ? '; ends on a held breath' : ''}${w.remarks.length ? `; ${w.remarks.join(', ')}` : ''}`,
       chords: draft.slots.map((s) => chordName(s.chord, draft.key)),
       layers: w.layers,
       tension: piece.tensionOf(index),

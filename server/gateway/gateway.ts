@@ -235,7 +235,7 @@ export class Gateway {
     const dir = process.env.DREX_DUMP_DIR;
     if (!dir) return;
     const n = this.dumped.get(req.callType) ?? 0;
-    if (n >= 3) return;
+    if (n >= (Number(process.env.DREX_DUMP_MAX) || 3)) return;
     this.dumped.set(req.callType, n + 1);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${req.callType}.${n + 1}.json`), JSON.stringify(this.buildBody(req, modelFor(req.callType, !!req.images?.length)), null, 2));

@@ -3,11 +3,12 @@
 // video-locked mode for scores pinned to an external clock. See README.md in this folder.
 
 import * as Tone from 'tone';
-import type { HoldNote, HoldUpdate, InstrumentId, LayerRole, MixState, NoteEvent, PhraseScore, SoundWorld } from '../../../shared/types.ts';
+import type { HoldNote, HoldUpdate, InstrumentId, LayerRole, MixState, NoteEvent, PhraseScore, SoundWorld, Step7 } from '../../../shared/types.ts';
+import { beatToSec } from '../../../shared/types.ts';
 import { LAYER_ROLES, MixGraph, makeSyntheticIr } from './graph.ts';
 import { IR_BASE_URL, IR_INDEX_URL, MANIFEST_URL, SIDECAR_URL, emptyManifest, isSynthId, isUnpitched, joinUrl, normalizeManifest, sampleSourceId } from './manifest.ts';
 import type { IrEntry, ManifestSidecar, SampleManifest } from './manifest.ts';
-import { DEFAULT_MIX, WORLDS, delayTimeSec, mergeMix, mixToParams } from './mixmap.ts';
+import { DEFAULT_MIX, WORLDS, curveLevel, delayTimeSec, mergeMix, mixToParams } from './mixmap.ts';
 import type { MixParams } from './mixmap.ts';
 import { dbToGain } from './selection.ts';
 import { planPhrase } from './plan.ts';
@@ -533,10 +534,26 @@ export class AudioEngine {
 
   // ───────────────────────────── Scheduling shared by both modes ─────────────────────────────
 
-  private applyPhraseMix(score: PhraseScore, time: number, rampSec: number): void {
+  /** `phraseStart` differs from `time` only when playback lands inside a phrase. */
+  private applyPhraseMix(score: PhraseScore, time: number, rampSec: number, phraseStart = time): void {
+    const curve = score.dynCurve && score.dynCurve.length > 1 ? score.dynCurve : null;
     this.mix = { ...DEFAULT_MIX, ...score.mix };
+    if (curve) this.mix.dynamics = curveLevel(curve, secToBeat(score, Math.max(0, time - phraseStart))) as Step7;
     this.graph.applyMix(this.params(), time, rampSec);
     this.graph.setDelayTime(delayTimeSec(score.bpm), time);
+    if (!curve) return;
+    // A crescendo, diminuendo or swell: the level moves through the phrase in short eased steps.
+    // Every step starts before the phrase ends, so the next phrase's mix cancels nothing it should keep.
+    const STEP_BEATS = 0.5;
+    const lastBeat = Math.min(score.beats, curve[curve.length - 1].beat);
+    for (let b = STEP_BEATS; b <= lastBeat + 1e-6; b += STEP_BEATS) {
+      const from = phraseStart + beatToSec(score, b - STEP_BEATS);
+      if (from < time + rampSec) continue;
+      this.mix.dynamics = curveLevel(curve, b) as Step7;
+      this.graph.easeMaster(this.params().master, from, (beatToSec(score, b) - beatToSec(score, b - STEP_BEATS)) / 2);
+    }
+    // Where the phrase leaves the level: a hold that follows carries on from there.
+    this.mix.dynamics = curveLevel(curve, lastBeat) as Step7;
   }
 
   /** Schedule everything in the phrase that starts before `horizon` (audio time). */
@@ -844,7 +861,7 @@ export class AudioEngine {
     // landing inside a phrase: its mix at once, the fade / cut where it would be, and the notes already sounding
     const start = current.startSec + s.offset;
     const rel = c - current.startSec;
-    this.applyPhraseMix(current.score, now, 0.08);
+    this.applyPhraseMix(current.score, now, 0.08, start);
     const fade = current.plan.fade;
     if (fade) {
       if (rel <= fade.fromSec) {

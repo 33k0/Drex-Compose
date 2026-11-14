@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  ArrivalId, EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId, MeterId, ModeId, PhraseRole, PlanView, RulesView,
+  ArrivalId, EndingId, FormId, GrooveId, HarmonicLanguage, InstrumentId, KeyPlanId, MeterId, ModeId, PhraseRole, PlanView, RulesView,
   SoundWorld, StyleId,
 } from '../../shared/types.ts';
 import { TENSION_LEVELS, type Ctx } from '../context.ts';
@@ -15,7 +15,7 @@ import {
 } from '../core/theory.ts';
 import type { ChoiceOption, Question } from '../gateway/gateway.ts';
 import { pack, ROOT } from '../pack.ts';
-import { ARRIVAL_LABEL, ARRIVAL_TEXT, availableInstruments, INSTRUMENTS, PHRASE_BARS, ROLE_INSTRUMENTS, type Plan, type Section } from '../piece.ts';
+import { ARRIVAL_LABEL, ARRIVAL_TEXT, arrivalsFor, CLIMAX_THEME_TEXT, GROOVES, availableInstruments, INSTRUMENTS, PHRASE_BARS, ROLE_INSTRUMENTS, type ClimaxTheme, type Plan, type Section } from '../piece.ts';
 
 const opt = (key: string, label: string, criteria: string, prior = 0): ChoiceOption => ({ key, label, criteria, prior });
 
@@ -32,7 +32,7 @@ function tempoFeel(bpm: number): string {
 export function rulesView(ctx: Ctx): RulesView {
   const r = ctx.piece.rules;
   return {
-    style: r.style, styleName: pack.sheet(r.style).name, bpm: r.bpm, meter: r.meter.id, keyName: keyName(r.key), mode: r.key.mode,
+    style: r.style, styleName: pack.sheet(r.style).name, ...(r.groove ? { groove: r.groove } : {}), bpm: r.bpm, meter: r.meter.id, keyName: keyName(r.key), mode: r.key.mode,
     harmonicLanguage: r.harmonicLanguage, palette: r.palette, soundWorld: r.soundWorld, lengthSec: r.lengthSec, form: r.form,
     ending: r.ending, keyPlan: r.keyPlan,
   };
@@ -75,14 +75,27 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
           : s.id === 'playful' ? m.playful * 4 + Math.max(0, m.valence) * 0.8 - 1.3
             : 0.6 + m.size * 1.2 + Math.max(0, -m.valence) * 1.2 + m.water * 0.8 - m.electronic * 1.5 - m.playful * 1.5)),
   };
-  const styleAns = await gw.ask({ callType: 'setup', title: 'Setup: style', state: piece.preludeState('setup'), questions: [styleQ], picking: 'top' });
+  const groovePrior: Record<GrooveId, number> = {
+    house: m.energy * 1.5 + m.electronic * 0.6,
+    boom_bap: (1 - m.energy) * 1.2 + m.darkness * 0.4,
+    trap: m.darkness * 1.6 + m.electronic * 0.8,
+    funk: m.playful * 1.8 + Math.max(0, m.valence) * 0.8,
+    pop: 0.8 + Math.max(0, m.valence) * 0.8,
+  };
+  const grooveQ: Question = {
+    id: 'groove', type: 'choice', label: 'Groove (beat-driven only)',
+    instructions: `The piece is "${piece.prompt}". If it is written on the beat-driven sheet, which groove family should it use?`,
+    options: (Object.keys(GROOVES) as GrooveId[]).map((g) => opt(g, GROOVES[g].label, GROOVES[g].text, groovePrior[g])),
+  };
+  const styleAns = await gw.ask({ callType: 'setup', title: 'Setup: style', state: piece.preludeState('setup'), questions: [styleQ, grooveQ], picking: 'top' });
   const style = styleAns.picks[0].style_sheet as StyleId;
+  const groove = style === 'beat_driven' ? (styleAns.picks[0].groove as GrooveId) : undefined;
   const orch = style === 'bittersweet_orchestral';
   const beat = style === 'beat_driven';
   const play = style === 'playful';
 
   // 2. The rules.
-  const targetBpm = orch ? 60 + m.energy * 34 : beat ? 96 + m.energy * 48 : 98 + m.energy * 44;
+  const targetBpm = orch ? 60 + m.energy * 34 : groove ? GROOVES[groove].bpm : beat ? 96 + m.energy * 48 : 98 + m.energy * 44;
   // With the tempo already fixed, the stand-in leans toward meters that suit it.
   const fastFixed = fixed.bpm !== undefined && fixed.bpm >= 96;
   const tempo: Question = {
@@ -219,7 +232,7 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
   const sheetLine = pack.styleText(style);
   const rulesAns = await gw.ask({
     callType: 'setup', title: 'Setup: rules of the piece',
-    state: piece.preludeState('setup', [sheetLine]),
+    state: piece.preludeState('setup', [sheetLine, ...(groove ? [`GROOVE  ${GROOVES[groove].text}`] : [])]),
     questions: [
       ...(fixed.bpm === undefined ? [tempo] : []),
       meter, keyCentre, mode, language, world,
@@ -234,6 +247,7 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
 
   piece.rules = {
     style,
+    ...(groove ? { groove } : {}),
     bpm: fixed.bpm ?? Number(p.tempo.slice(4)),
     meter: METERS[p.meter as MeterId],
     key,
@@ -255,9 +269,10 @@ export async function runSetup(ctx: Ctx, opts: SetupOptions = {}): Promise<void>
   const avail = [...availableInstruments()];
   const paletteQs: Question[] = avail.map((id) => ({
     id: `use_${id}`, type: 'noul', label: INSTRUMENTS[id].name,
-    instructions: `Should the ${INSTRUMENTS[id].name} be part of this piece's palette? Character: ${INSTRUMENTS[id].character}.`,
-    yes: 'It suits the style sheet and the prompt and will have a real job in the piece.',
-    no: 'It would be out of place or redundant here.',
+    // The palette is a pool, not a line-up: asked as "will it have a real job" Drex kept it small and the same few instruments played throughout.
+    instructions: `The palette is the pool of instruments this piece may draw on. Instruments come and go: one may colour a single phrase and then rest. Could the ${INSTRUMENTS[id].name} have a moment somewhere in this piece? Character: ${INSTRUMENTS[id].character}.`,
+    yes: 'It could colour at least one moment of this piece.',
+    no: 'It would sound wrong anywhere in this piece.',
     prior: clamp((base[id] ?? 0.05) + promptJitter(m, `pal${id}`) * 0.06, 0.02, 0.98),
   }));
   const palAns = await gw.ask({
@@ -363,10 +378,13 @@ export async function runPlan(ctx: Ctx): Promise<void> {
   const questions: Question[] = [];
   for (let i = 0; i < n; i++) {
     const span = `section ${i + 1} of ${n} (phrases ${bounds[i] + 1}-${bounds[i + 1]}, about ${Math.round((bounds[i + 1] - bounds[i]) * phraseSec)} s)`;
-    questions.push({
+    // The first section states the theme, so it is not asked. The last section closes the piece: it
+    // winds down or brings the theme home, and cannot leave on new material. Middle sections do the rest.
+    const roleOptions: PhraseRole[] = i === n - 1 ? ['coda', 'return'] : ['development', 'departure', 'return', 'climax'];
+    if (i > 0) questions.push({
       id: `role_${i + 1}`, type: 'choice', label: `Section ${i + 1} role`,
-      instructions: `What is the role of ${span}?`,
-      options: (Object.keys(ROLE_TEXT) as PhraseRole[]).map((r) => opt(r, r, ROLE_TEXT[r], r === tpl.roles[i] ? 2.2 : r === 'development' ? 0.4 : i === 0 || r === 'coda' || r === 'statement' ? -2 : 0)),
+      instructions: `What is the role of ${span}?${i === n - 1 ? ' It is the last section of the piece.' : ''}`,
+      options: roleOptions.map((r) => opt(r, r, ROLE_TEXT[r], r === tpl.roles[i] ? 2.2 : r === 'development' || r === 'coda' ? 0.4 : 0)),
     });
     questions.push({
       id: `tension_${i + 1}`, type: 'score', label: `Section ${i + 1} tension`,
@@ -375,7 +393,7 @@ export async function runPlan(ctx: Ctx): Promise<void> {
       prior: clamp((tpl.tension[i] / 7) * peak, 1, 7) - 1,
       spread: 0.6,
     });
-    questions.push({
+    if (i > 0 && i < n - 1) questions.push({
       id: `departure_${i + 1}`, type: 'noul', label: `Section ${i + 1} leaves the theme`,
       instructions: `Should ${span} leave the theme on purpose, for contrast?`,
       yes: 'A planned departure: contrasting material that still fits the key and mood.',
@@ -396,12 +414,25 @@ export async function runPlan(ctx: Ctx): Promise<void> {
     hit: orchStyle ? 0.2 : 1.2,
     open_wall: (orchStyle ? 0.9 : 0) + mood.size * 1.2 + mood.water * 0.5,
     broaden: mood.size * 1.1 + mood.darkness * 0.8 - 0.6,
+    drop: 1.6,
   };
   questions.push({
     id: 'climax_arrival', type: 'choice', label: 'How the climax arrives',
     // The prompt is quoted here because it is a tiny share of the state: measured live, that is what lets it steer this choice.
     instructions: `The piece is "${piece.prompt}". How should its climax arrive?`,
-    options: (Object.keys(ARRIVAL_TEXT) as ArrivalId[]).map((a) => opt(a, ARRIVAL_LABEL[a], ARRIVAL_TEXT[a], arrivalPrior[a])),
+    options: arrivalsFor(rules.style).map((a) => opt(a, ARRIVAL_LABEL[a], ARRIVAL_TEXT[a], arrivalPrior[a])),
+  });
+  questions.push({
+    id: 'climax_theme', type: 'choice', label: 'The melody at the climax',
+    instructions: `The piece is "${piece.prompt}". A climax means something when the listener recognises what has arrived. What should the melody be at the climax?`,
+    options: (Object.keys(CLIMAX_THEME_TEXT) as ClimaxTheme[]).map((k) => opt(k, k, CLIMAX_THEME_TEXT[k], k === 'returns' ? 1.4 : k === 'broadened' ? 0.6 + mood.size * 0.8 : 0.3)),
+  });
+  questions.push({
+    id: 'restate_theme', type: 'noul', label: 'State the theme twice',
+    instructions: 'Should the theme be stated a second time straight after the first, on a new instrument or over new harmony, so the listener has it by heart before it is developed?',
+    yes: 'Heard twice, it can be recognised when it comes back later.',
+    no: 'Once is enough; move straight on to developing it.',
+    prior: total >= 8 ? 0.75 : 0.35,
   });
   questions.push({
     id: 'counter_theme', type: 'noul', label: 'Needs a counter-theme',
@@ -424,8 +455,8 @@ export async function runPlan(ctx: Ctx): Promise<void> {
   const climaxPhrase = clamp(Math.round((Number(p.climax_position.slice(3)) / 100) * total) - 1, 1, total - 1);
   const sections: Section[] = [];
   for (let i = 0; i < n; i++) {
-    let role = p[`role_${i + 1}`] as PhraseRole;
-    const departure = (ans.values[`departure_${i + 1}`] >= 0.5 || role === 'departure') && i !== 0;
+    let role = (p[`role_${i + 1}`] ?? 'statement') as PhraseRole;
+    const departure = i > 0 && i < n - 1 && ((ans.values[`departure_${i + 1}`] ?? 0) >= 0.5 || role === 'departure');
     // The theme has to be stated before it can be developed: the first section states it.
     if (i === 0) role = 'statement';
     else if (departure) role = 'departure';
@@ -438,6 +469,8 @@ export async function runPlan(ctx: Ctx): Promise<void> {
   const plan: Plan = {
     sections, totalPhrases: total, climaxPhrase,
     climaxArrival: p.climax_arrival as ArrivalId,
+    climaxTheme: p.climax_theme as ClimaxTheme,
+    restate: ans.values.restate_theme >= 0.5,
     needsCounter: ans.values.counter_theme >= 0.5,
     needsContrast: ans.values.contrast_theme >= 0.5 || sections.some((s) => s.departure),
   };

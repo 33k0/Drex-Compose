@@ -15,6 +15,8 @@ interface Rule {
   text: string;
   source: { book: string; ref: string } | null;
   calls: string[];
+  /** When set, the rule is only sent for these style sheets (and goes first, so it always gets room). */
+  styles?: StyleId[];
 }
 
 export interface StyleSheet {
@@ -72,11 +74,11 @@ const SLICE: Partial<Record<CallType, { calls: string[]; topics?: string[]; max:
   theme_note: { calls: ['theme_draft'], topics: ['melody'], max: 12 },
   theme_derive: { calls: ['theme_draft', 'phrase_direction'], topics: ['developing_variation', 'melody'], max: 10 },
   theme_judge: { calls: ['theme_judge'], max: 16 },
-  phrase_direction: { calls: ['phrase_direction'], topics: ['developing_variation', 'departure_return', 'phrase_structure', 'melody', 'tension_release', 'cadences', 'form', 'scoring_to_picture'], max: 18 },
-  chord_path: { calls: ['phrase_direction', 'voice_leading'], topics: ['harmony', 'cadences'], max: 16 },
+  phrase_direction: { calls: ['phrase_direction'], topics: ['developing_variation', 'departure_return', 'phrase_structure', 'melody', 'tension_release', 'dynamics_pacing', 'harmony', 'cadences', 'form', 'scoring_to_picture'], max: 32 },
+  chord_path: { calls: ['phrase_direction', 'voice_leading'], topics: ['harmony', 'cadences', 'tension_release'], max: 22 },
   voice_leading: { calls: ['voice_leading'], topics: ['voice_leading', 'harmony'], max: 12 },
   phrase_judge: { calls: ['phrase_judge'], max: 16 },
-  orchestration: { calls: ['orchestration'], max: 22 },
+  orchestration: { calls: ['orchestration'], max: 40 },
   hold: { calls: ['hold'], max: 8 },
   ending: { calls: ['ending'], max: 10 },
   // Scoring a video. These slices are empty unless the pack has scoring-to-picture rules.
@@ -104,7 +106,9 @@ class Pack {
     // Optional extra rules for scoring to picture (only the video project ships this file). They go
     // first so the per-topic round robin in theory() always gives them room.
     const picture = readJson<{ rules: Rule[] }>('scoring-to-picture.json', { rules: [] }).rules ?? [];
-    this.rules = [...picture, ...this.rules];
+    // Hand-written rules for the beat-driven sheet: the four books stop in 1900 and say nothing about grooves.
+    const modern = readJson<{ rules: Rule[] }>('modern.json', { rules: [] }).rules ?? [];
+    this.rules = [...picture, ...modern, ...this.rules];
     const sheets = readJson<StyleSheet[] | { sheets: StyleSheet[] }>('style-sheets.json', FALLBACK_SHEETS);
     const list = Array.isArray(sheets) ? sheets : sheets.sheets;
     if (list?.length === 3) this.sheets = list;
@@ -128,18 +132,20 @@ class Pack {
   }
 
   /** The theory slice for one call type, as a text block for the state. */
-  theory(callType: CallType): string {
-    const hit = this.cache.get(callType);
+  theory(callType: CallType, style?: StyleId): string {
+    const cacheKey = `${callType}:${style ?? ''}`;
+    const hit = this.cache.get(cacheKey);
     if (hit !== undefined) return hit;
     const spec = SLICE[callType];
     let text = '';
     if (spec && this.rules.length) {
-      let rules = this.rules.filter((r) => r.calls.some((c) => spec.calls.includes(c)));
+      let rules = this.rules.filter((r) => r.calls.some((c) => spec.calls.includes(c)) && (!r.styles || (!!style && r.styles.includes(style))));
       if (spec.topics) {
         const order = spec.topics;
+        const rank = (r: Rule) => (r.styles ? -1 : order.indexOf(r.topic));
         rules = rules
-          .filter((r) => order.includes(r.topic))
-          .sort((a, b) => order.indexOf(a.topic) - order.indexOf(b.topic));
+          .filter((r) => !!r.styles || order.includes(r.topic))
+          .sort((a, b) => rank(a) - rank(b));
       }
       // Spread the budget across topics rather than taking the first N of one topic.
       const byTopic = new Map<string, Rule[]>();
@@ -170,7 +176,7 @@ class Pack {
         'WORKED EXAMPLES\n' +
         ex.map((e) => `        - Given: ${e.state} Good choice: ${e.choice}. Why: ${e.reason}`).join('\n');
     }
-    this.cache.set(callType, text);
+    this.cache.set(cacheKey, text);
     return text;
   }
 }
