@@ -158,6 +158,70 @@ export function createReplayTransport(name: string, handlers: Handlers): Transpo
   };
 }
 
+/** True in the build that runs on Vercel: there is no socket server, only the /api/compose function. */
+export function isHosted(): boolean {
+  return import.meta.env.VITE_HOSTED === '1';
+}
+
+/**
+ * Hosted mode: one request composes one piece. The function streams the session's events back, one
+ * JSON object per line, and they go through the same path as a live run.
+ */
+export function createHttpTransport(handlers: Handlers): Transport {
+  let abort: AbortController | null = null;
+  handlers.onConn('open');
+  const fail = (message: string) => {
+    handlers.onEvent({ type: 'error', message });
+    handlers.onEvent({ type: 'status', stage: 'error', message });
+  };
+  return {
+    send(event) {
+      if (event.type === 'stop') {
+        abort?.abort();
+        abort = null;
+        return;
+      }
+      if (event.type !== 'start') return; // playback reports have nowhere to go: the piece is composed straight through
+      abort?.abort();
+      const mine = new AbortController();
+      abort = mine;
+      void (async () => {
+        try {
+          const res = await fetch('/api/compose', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: event.prompt, seed: event.seed }), signal: mine.signal,
+          });
+          if (!res.ok || !res.body) throw new Error(`the composer answered ${res.status}`);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let finished = false;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let nl: number;
+            while ((nl = buffer.indexOf('\n')) >= 0) {
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (!line) continue;
+              const e = JSON.parse(line) as ServerEvent;
+              if (e.type === 'done' || e.type === 'error') finished = true;
+              handlers.onEvent(e);
+            }
+          }
+          if (!finished && !mine.signal.aborted) fail('The composer stopped before the piece was finished.');
+        } catch (err) {
+          if (!mine.signal.aborted) fail(`Could not compose: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      })();
+    },
+    close() {
+      abort?.abort();
+    },
+  };
+}
+
 export function isMockMode(): boolean {
   return new URLSearchParams(location.search).get('mock') === '1';
 }

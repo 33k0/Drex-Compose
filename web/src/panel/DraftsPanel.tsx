@@ -6,13 +6,14 @@ import { useSel } from '../store';
 import { Sparkline } from './Sparkline';
 import './drafts.css';
 
+const EXPLAIN = 'Drex writes a few versions of each part, then picks the best one or rejects them all.';
+
 function roundSubject(r: DraftRound): string {
   return r.kind === 'theme' ? `Theme ${r.themeId ?? ''}`.trim() : `Phrase ${(r.phrase ?? 0) + 1}`;
 }
 
-function draftName(id: string, position: number): string {
-  // Ids are the server's; a single letter reads well as is, anything longer gets its position.
-  return /^[a-z]$/i.test(id) ? id.toUpperCase() : String(position + 1);
+function draftName(_id: string, position: number): string {
+  return `Version ${position + 1}`;
 }
 
 /** The drafts for the latest judge round, and what the judge did with them. */
@@ -33,11 +34,11 @@ export const DraftsPanel = memo(function DraftsPanel() {
     return (
       <section className="panel drafts" aria-label="Drafts">
         <div className="panel__head">
-          <h2 className="panel__title">Drafts and the judge</h2>
+          <h2 className="panel__title">Versions</h2>
         </div>
+        <p className="panel__explain">{EXPLAIN}</p>
         <div className="panel__empty">
-          <strong>No drafts yet</strong>
-          <span>Drex writes several drafts of every theme and phrase, then judges them. It may accept one or reject them all.</span>
+          <strong>No versions yet</strong>
         </div>
       </section>
     );
@@ -48,7 +49,8 @@ export const DraftsPanel = memo(function DraftsPanel() {
   const earlier = siblings.filter((r) => r.seq < round.seq && r.rejected);
   const n = round.drafts.length;
   const dense = n > 4;
-  const columns = round.kind === 'theme' && n > 4 ? Math.ceil(n / 2) : Math.min(n, 6);
+  // Wide, short cards read as a melody line; two across for up to four versions, three beyond.
+  const columns = n <= 1 ? 1 : n <= 4 ? 2 : 3;
   const picked = round.drafts.findIndex((d) => d.id === round.verdict.picked);
   // Offer the last rejection only when it is not already on screen (as this round or in the list above).
   const offerReview = Boolean(lastRejection) && lastRejection !== focus && !earlier.includes(lastRejection!);
@@ -56,25 +58,27 @@ export const DraftsPanel = memo(function DraftsPanel() {
   return (
     <section className={`panel drafts${round.rejected ? ' is-rejected' : ''}`} aria-label="Drafts">
       <div className="panel__head">
-        <h2 className="panel__title">Drafts and the judge</h2>
+        <h2 className="panel__title">Versions</h2>
         <span className="drafts__where">
           {reviewing && <span className="tag">Reviewing</span>}
           <span className="drafts__subject">
-            {roundSubject(round)}, round <span className="mono">{round.round}</span>
+            {roundSubject(round)}
+            {round.round > 1 && <>, try <span className="mono">{round.round}</span></>}
           </span>
           {round.rejected ? (
             <span key={round.seq} className="tag tag--reject">All {n} rejected</span>
           ) : (
-            <span key={round.seq} className="tag tag--accent">Accepted {picked >= 0 ? draftName(round.drafts[picked].id, picked) : ''}</span>
+            <span key={round.seq} className="tag tag--accent">Picked {picked >= 0 ? draftName(round.drafts[picked].id, picked) : ''}</span>
           )}
         </span>
       </div>
+      <p className="panel__explain">{EXPLAIN}</p>
 
       {earlier.length > 0 && (
         <ol className="drafts__earlier">
           {earlier.map((r) => (
             <li key={r.seq}>
-              <span className="drafts__earlier-tag">Round {r.round} rejected</span>
+              <span className="drafts__earlier-tag">Try {r.round} rejected</span>
               <span className="drafts__earlier-reason">{r.verdict.reason}</span>
             </li>
           ))}
@@ -97,21 +101,18 @@ export const DraftsPanel = memo(function DraftsPanel() {
         ))}
       </ol>
 
-      <p key={`v${round.seq}`} className={`verdict${round.rejected ? ' verdict--reject' : ''}`}>
-        <span className="verdict__who">{round.rejected ? 'Judge rejected every draft' : 'Judge'}</span>
-        <span className="verdict__reason score-text">{round.verdict.reason}</span>
-        {round.verdict.probabilities.none !== undefined && (
-          <span className="verdict__none">
-            none of these <b className="mono">{pct(round.verdict.probabilities.none)}</b>
-          </span>
-        )}
+{/* An accepted round always gives the same stock reason, so only a rejection is explained. */}
+      {round.rejected && (
+        <p key={`v${round.seq}`} className={`verdict${round.rejected ? ' verdict--reject' : ''}`}>
+        <span className="verdict__who">{round.rejected ? 'Rejected all' : 'Why'}</span>
+        <span className="verdict__reason">{round.verdict.reason}</span>
       </p>
+      )}
 
       {(offerReview || reviewing) && lastRejection && (
         <div className="drafts__foot">
           <span>
-            Last rejection: {roundSubject(lastRejection).toLowerCase()}, round <span className="mono">{lastRejection.round}</span>,{' '}
-            {lastRejection.drafts.length} drafts turned down
+            Last rejection: {roundSubject(lastRejection).toLowerCase()}, all {lastRejection.drafts.length} versions turned down
           </span>
           <button type="button" className="drafts__review" onClick={() => setReviewing((v) => !v)} aria-pressed={reviewing}>
             {reviewing ? 'Back to live' : 'Show it'}
@@ -130,38 +131,18 @@ interface CardProps {
 }
 
 const DraftCard = memo(function DraftCard({ draft, position, state, probability }: CardProps) {
-  const stamp = state === 'picked' ? 'Accepted' : state === 'rejected' ? 'Rejected' : 'Passed over';
-  const hasChords = Boolean(draft.chords && draft.chords.length > 0);
-  const hasFacts = Boolean(draft.facts && draft.facts.length > 0);
+  const stamp = state === 'picked' ? 'Picked' : state === 'rejected' ? 'Rejected' : '';
   return (
     <li className={`draft is-${state}`} style={{ '--i': position } as CSSProperties}>
       <div className="draft__head">
-        <span className="draft__id score-text">{draftName(draft.id, position)}</span>
+        <span className="draft__id">{draftName(draft.id, position)}</span>
         <span className="draft__stamp">{stamp}</span>
-        {probability !== undefined && <span className="draft__p mono">{pct(probability)}</span>}
+        {probability !== undefined && <span className="draft__p mono" title="How much Drex liked this version">{pct(probability)}</span>}
       </div>
       <div className="draft__roll">
         <Sparkline notes={draft.notes} />
         <span className="draft__strike" aria-hidden="true" />
       </div>
-      <p className="draft__lineage score-text" title={draft.lineage}>{draft.lineage}</p>
-      <p className="draft__notation mono" title={draft.notation}>{draft.notation}</p>
-      {(hasChords || hasFacts) && (
-        <dl className="draft__facts">
-          {hasChords && (
-            <div>
-              <dt>chords</dt>
-              <dd className="mono">{draft.chords!.join(' ')}</dd>
-            </div>
-          )}
-          {(draft.facts ?? []).slice(0, 3).map((f) => (
-            <div key={f.label}>
-              <dt>{f.label}</dt>
-              <dd>{f.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
     </li>
   );
 });

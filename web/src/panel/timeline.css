@@ -268,3 +268,13 @@
 }
 
 .tl__waiting .score-text { font-size: 1.5rem; color: var(--ink); }
+
+/* ── Quieter labels: the curve is the subject ── */
+.band__label { align-items: center; }
+.band__role { font-size: 0.86rem; font-weight: 500; line-height: 1.3; text-transform: capitalize; }
+.band__key { font-size: 0.72rem; }
+.band.is-now .band__role { font-weight: 700; }
+.tl__climax-label { font-size: 0.78rem; color: var(--ink-2); }
+.tick-cell__n { font-size: 0.7rem; }
+/* The playhead is just a line, so it never covers a section name. */
+.tl__marker-head:not(.is-holding) { display: none; }

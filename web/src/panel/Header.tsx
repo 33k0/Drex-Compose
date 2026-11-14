@@ -1,38 +1,45 @@
-import { memo } from 'react';
-import { modelBadge } from '../format';
+import { memo, useState } from 'react';
+import { modelBadge, titleFromPrompt } from '../format';
 import { useSel } from '../store';
 import './header.css';
 
 interface Props {
   onStop(): void;
   onNewPrompt(): void;
+  onSavedTracks(): void;
 }
 
-export const Header = memo(function Header({ onStop, onNewPrompt }: Props) {
+export const Header = memo(function Header({ onStop, onNewPrompt, onSavedTracks }: Props) {
   const session = useSel((s) => s.session);
   const pending = useSel((s) => s.pendingPrompt);
   const phase = useSel((s) => s.phase);
   const prompt = session?.prompt ?? pending ?? '';
   const live = phase === 'running' || phase === 'starting';
+  const [showPrompt, setShowPrompt] = useState(false);
 
   return (
     <header className="top">
       <div className="top__brand">
         Drex <span>Composer</span>
       </div>
-      <p className="top__prompt score-text" title={prompt}>
-        <span className="visually-hidden">Prompt: </span>
-        {prompt ? `“${prompt}”` : ''}
-      </p>
+      <div className="top__piece">
+        <h1 className="top__title title-text">{titleFromPrompt(prompt)}</h1>
+        <button type="button" className="top__reveal" onClick={() => setShowPrompt((v) => !v)} aria-expanded={showPrompt}>
+          {showPrompt ? 'Hide prompt' : 'Show prompt'}
+        </button>
+        {showPrompt && <p className="top__summary">“{prompt}”</p>}
+      </div>
       <div className="top__right">
         <ModelBadge />
         <AudioBadge />
-        <ConnBadge />
         {live && (
           <button type="button" className="btn" onClick={onStop}>
             Stop <kbd>Esc</kbd>
           </button>
         )}
+        <button type="button" className="btn" onClick={onSavedTracks}>
+          Saved tracks
+        </button>
         <button type="button" className={`btn${live ? '' : ' btn--primary'}`} onClick={onNewPrompt}>
           New prompt
         </button>

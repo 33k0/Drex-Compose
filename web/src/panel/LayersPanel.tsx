@@ -1,8 +1,7 @@
 import { memo, useRef } from 'react';
-import { DYNAMIC_NAMES, type LayerRole, type LayerSummary, type PhraseScore } from '../../../shared/types';
+import type { LayerRole, LayerSummary, PhraseScore } from '../../../shared/types';
 import { LAYER_ROLES, engineRef } from '../engineBridge';
-import { articulationName, entryName, instrumentName } from '../format';
-import { rejectedRoundCount } from '../state';
+import { LAYER_NAMES, LOUDNESS, capitalize, entryName, instrumentName } from '../format';
 import { store, useSel } from '../store';
 import { Fermata } from './Fermata';
 import { useFrame } from './useFrame';
@@ -26,7 +25,7 @@ export const LayersPanel = memo(function LayersPanel({ onNewPrompt }: Props) {
   return (
     <section className={`panel layers${holding ? ' is-holding' : ''}`} aria-label="Now sounding">
       <div className="panel__head">
-        <h2 className="panel__title">Now sounding</h2>
+        <h2 className="panel__title">Playing now</h2>
         {nowIndex !== null && (
           <span className="panel__meta">
             phrase <b className="mono">{nowIndex + 1}</b>
@@ -51,6 +50,7 @@ export const LayersPanel = memo(function LayersPanel({ onNewPrompt }: Props) {
         <Preparing />
       )}
 
+      <p className="panel__explain rows__explain">Each line is one part of the band and the instrument playing it.</p>
       <LayerRows phrase={score?.index ?? -1} layers={score?.display.layers ?? null} />
     </section>
   );
@@ -59,6 +59,8 @@ export const LayersPanel = memo(function LayersPanel({ onNewPrompt }: Props) {
 // ───────────────────────────── Sounding phrase ─────────────────────────────
 
 const NowHead = memo(function NowHead({ score }: { score: PhraseScore }) {
+  // Same name the track at the bottom uses for this stretch of the piece.
+  const part = useSel((s) => s.plan?.sections.find((sec) => score.index >= sec.phrases[0] && score.index <= sec.phrases[1])?.part);
   const progress = useRef<HTMLSpanElement>(null);
   useFrame(() => {
     const el = progress.current;
@@ -72,13 +74,12 @@ const NowHead = memo(function NowHead({ score }: { score: PhraseScore }) {
   return (
     <div className="now" key={score.index}>
       <div className="now__line">
-        <span className="now__role score-text">{score.role}</span>
-        <span className="now__dyn score-text" title="Overall dynamic">{DYNAMIC_NAMES[score.mix.dynamics]}</span>
+        <span className="now__role">{capitalize(part ?? score.role)}</span>
+        <span className="now__dyn" title="How loud this phrase is">{LOUDNESS[score.mix.dynamics]}</span>
       </div>
       <div className="now__facts">
         <span>{score.display.key}</span>
-        <span className="mono now__chords">{score.display.chords.join('  ')}</span>
-        <span className="mono">{score.bars} bars</span>
+        <span className="now__chords">chords <span className="mono">{score.display.chords.join('  ')}</span></span>
       </div>
       <span className="now__progress" aria-hidden="true">
         <span ref={progress} />
@@ -133,11 +134,11 @@ const HoldMarker = memo(function HoldMarker() {
         ))}
         {latest ? (
           <li key={`${latest.action}-${hold.updates.length}`} className="is-current">
-            <span className="score-text">{latest.label}</span>
-            <span className="mono">over {latest.overSec.toFixed(1)} s</span>
+            <span>{latest.label}</span>
+
           </li>
         ) : (
-          <li className="is-waiting score-text">sustain unchanged so far</li>
+          <li className="is-waiting">sustain unchanged so far</li>
         )}
       </ol>
     </div>
@@ -159,7 +160,7 @@ const Preparing = memo(function Preparing() {
     detail = 'Start a new prompt to hear another piece.';
   } else if (phase === 'error') {
     headline = 'The run ended early';
-    detail = 'See the status line below. Start a new prompt to try again.';
+    detail = 'See the message at the bottom. Start a new prompt to try again.';
   } else if (hasRules && !audio.instrumentsReady) {
     headline = 'Loading instruments';
     detail = audio.mode === 'pending' ? 'Waiting for the audio engine.' : 'Fetching samples for the palette Drex chose.';
@@ -173,16 +174,14 @@ const Preparing = memo(function Preparing() {
 
   return (
     <div className="prep" role="status">
-      <strong className="score-text">{headline}</strong>
+      <strong>{headline}</strong>
       <span>{detail}</span>
       {showLoad && (
         <div className="prep__load">
           <span className="prep__bar" aria-hidden="true">
             <span style={{ transform: `scaleX(${frac})` }} />
           </span>
-          <span className="mono">
-            {audio.loaded} of {audio.total} samples
-          </span>
+          <span className="mono">{Math.round(frac * 100)}%</span>
         </div>
       )}
       {audio.mode === 'silent' && <span className="prep__warn">Audio engine unavailable: running a silent playhead.</span>}
@@ -194,15 +193,11 @@ const Finished = memo(function Finished({ onNewPrompt }: Props) {
   // Read once: the run is over, these no longer change.
   const s = store.getState();
   const phrases = s.composedThrough + 1;
-  const rejected = Math.max(s.stats.rejects, rejectedRoundCount(s));
-  const holds = Math.max(s.stats.holds, s.hold.count);
   return (
     <div className="finished" role="status">
-      <strong className="score-text">Finished</strong>
+      <strong>Finished</strong>
       <span>
-        <b className="mono">{phrases}</b> phrases, <b className="mono">{s.stats.calls}</b> Drex calls,{' '}
-        <b className="mono">{rejected}</b> rejected {rejected === 1 ? 'round' : 'rounds'}, <b className="mono">{holds}</b>{' '}
-        {holds === 1 ? 'hold' : 'holds'}.
+        Drex wrote <b className="mono">{phrases}</b> phrases by making <b className="mono">{s.stats.calls}</b> decisions.
       </span>
       <button type="button" className="btn btn--primary" onClick={onNewPrompt}>
         New prompt
@@ -256,18 +251,14 @@ const LayerRows = memo(function LayerRows({ phrase, layers }: { phrase: number; 
         return (
           // A layer that enters in this phrase is remounted so its entry highlight plays once.
           <li key={entering ? `${role}@${phrase}` : role} className={`row${active ? ' is-active' : ''}${entering ? ' is-entering' : ''}`}>
-            <span className="row__role">{role}</span>
+            <span className="row__role">{LAYER_NAMES[role]}</span>
             {active ? (
               <>
-                <span className="row__inst" title={l!.detail}>
-                  {instrumentName(l!.inst!)}
-                  {l!.art && <span className="row__art">{articulationName(l!.art)}</span>}
-                </span>
-                <span className="row__entry">{entryName(l!.entry)}</span>
-                <span className="row__dyn score-text">{DYNAMIC_NAMES[l!.dynamics]}</span>
+                <span className="row__inst">{instrumentName(l!.inst!)}</span>
+                <span className="row__entry">{entering ? entryName(l!.entry) : ''}</span>
               </>
             ) : (
-              <span className="row__tacet score-text">tacet</span>
+              <span className="row__tacet">silent</span>
             )}
             <span className="row__meter" aria-hidden="true">
               <span ref={(el) => { meters.current[role] = el; }} className="row__lit" />

@@ -29,6 +29,8 @@ export interface EngineLike {
   playhead(): Playhead;
   levels(): Record<LayerRole, number>;
   masterLevel(): number;
+  /** Play phrases that carry `startSec` against an outside clock, following its play, pause and seek. The real engine has it. */
+  playSynced?(scores: PhraseScore[], clock: { now(): number; playing(): boolean }): void;
 }
 
 const CREATE_TIMEOUT_MS = 15000;

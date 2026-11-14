@@ -1,18 +1,17 @@
 /*
   Drex Composer live panel.
-  Direction: engraved score meets mixing desk. Warm ink on near-black, one accent (verdigris,
-  the patina of a copper engraving plate) for "chosen / sounding", raw copper for "rejected /
-  holding". Geist for interface text, Geist Mono for every number, EB Garamond italic for the
-  words a score would set in italic: the prompt, roles, dynamics, lineage.
-  Radius is 3px everywhere. No glows, no gradients on type.
+  Plain and readable: warm ink on solid black, one accent (verdigris) for "chosen / sounding",
+  copper for "rejected / holding". Geist for all text, Geist Mono for numbers. The serif italic
+  is kept for one thing only: the composition's title.
+  Radius is 3px everywhere. No glows, no gradients.
 */
 
 :root {
   --ink: #f3eee3;
   --ink-2: #cfc8ba;
   --ink-3: #aea79b;
-  --ground: #0b0c0d;
-  --panel: rgba(12, 13, 14, 0.62);
+  --ground: #000;
+  --panel: #0c0c0d;
   --panel-raised: rgba(243, 238, 227, 0.045);
   --rule: rgba(243, 238, 227, 0.13);
   --rule-strong: rgba(243, 238, 227, 0.3);
@@ -30,7 +29,7 @@
 
   --font-ui: 'Geist Variable', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'Geist Mono Variable', 'SF Mono', Menlo, Consolas, monospace;
-  --font-score: 'EB Garamond Variable', 'Iowan Old Style', Georgia, serif;
+  --font-title: 'EB Garamond Variable', 'Iowan Old Style', Georgia, serif;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -75,8 +74,8 @@ button { font: inherit; color: inherit; }
   font-feature-settings: 'zero' 0;
 }
 
-.score-text {
-  font-family: var(--font-score);
+.title-text {
+  font-family: var(--font-title);
   font-style: italic;
 }
 
@@ -101,8 +100,6 @@ button { font: inherit; color: inherit; }
   background: var(--panel);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  backdrop-filter: blur(22px) saturate(125%);
-  -webkit-backdrop-filter: blur(22px) saturate(125%);
 }
 
 .panel__head {
@@ -121,6 +118,14 @@ button { font: inherit; color: inherit; }
   text-transform: uppercase;
   color: var(--ink-2);
   white-space: nowrap;
+}
+
+.panel__explain {
+  flex: none;
+  padding: 0 var(--pad) 0.55rem;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: var(--ink-3);
 }
 
 .panel__meta {
@@ -142,18 +147,12 @@ button { font: inherit; color: inherit; }
 }
 
 .panel__empty strong {
-  font-family: var(--font-score);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 1.5rem;
+  font-weight: 600;
+  font-size: 1.25rem;
   color: var(--ink);
 }
 
 .panel__empty span { font-size: 0.95rem; max-width: 34ch; }
-
-@media (prefers-reduced-transparency: reduce) {
-  .panel { background: #111213; backdrop-filter: none; -webkit-backdrop-filter: none; }
-}
 
 /* ── Buttons, tags ── */
 

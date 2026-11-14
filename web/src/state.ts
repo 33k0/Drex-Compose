@@ -95,7 +95,7 @@ export interface PanelState {
   phrases: Record<number, PhraseScore>;
   /** Highest phrase index composed so far, -1 before the first. */
   composedThrough: number;
-  /** Recent calls, oldest first, capped. */
+  /** Every call of the run, oldest first (capped only as a safety net). */
   calls: CallView[];
   /** The call shown at full size. */
   featured: CallView | null;
@@ -112,7 +112,8 @@ export interface PanelState {
   audio: { mode: AudioMode; loaded: number; total: number; instrumentsReady: boolean };
 }
 
-export const CALL_LOG_LIMIT = 60;
+export /** Enough for a whole piece (a three-minute run makes a few hundred), so the history is complete. */
+const CALL_LOG_LIMIT = 4000;
 export const CONNECTION_LOST = 'Connection to the composer lost. Reconnecting.';
 const HOLD_UPDATE_LIMIT = 6;
 

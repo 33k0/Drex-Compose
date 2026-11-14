@@ -1,12 +1,13 @@
 // Run orchestration: the one place where the socket (or mock feed), the audio engine and the
 // store meet. Components call compose() / stop(); everything else is event plumbing.
 
-import type { ClientEvent, ServerEvent } from '../../shared/types';
+import type { ClientEvent, PhraseScore, ServerEvent } from '../../shared/types';
+import { phraseSeconds } from '../../shared/types';
 import { engineRef, loadRealEngine, type EngineLike } from './engineBridge';
 import { FakeEngine } from './fakeEngine';
 import type { Conn, EngineEvent } from './state';
 import { store } from './store';
-import { createMockTransport, createReplayTransport, createSocketTransport, isMockMode, replayName, type Transport } from './transport';
+import { createHttpTransport, createMockTransport, createReplayTransport, createSocketTransport, isHosted, isMockMode, replayName, type Transport } from './transport';
 
 class Controller {
   private transport: Transport | null = null;
@@ -19,20 +20,63 @@ class Controller {
   private instrumentsReady = false;
   private started = false;
   private booted = false;
+  /** A saved run is known whole before it plays, so it plays against a clock the listener can move. */
+  private replaying = false;
+  private scores: PhraseScore[] = [];
+  private starts: number[] = [];
+  private total = 0;
+  private seekable = false;
+  private clock = { pos: 0, playing: false, anchor: 0 };
+  private clockNow(): number {
+    const c = this.clock;
+    return c.playing ? Math.min(this.total, c.pos + (performance.now() - c.anchor) / 1000) : c.pos;
+  }
+
+  /** Where playback is, for the seek bar. `seekable` is false while composing live. */
+  position(): { seekable: boolean; sec: number; total: number; playing: boolean; starts: number[] } {
+    return { seekable: this.seekable, sec: this.seekable ? this.clockNow() : 0, total: this.total, playing: this.clock.playing, starts: this.starts };
+  }
+
+  seek(sec: number): void {
+    if (!this.seekable) return;
+    this.clock.pos = Math.max(0, Math.min(this.total - 0.05, sec));
+    this.clock.anchor = performance.now();
+  }
+
+  /** Jump by a number of seconds (negative = back). */
+  skip(deltaSec: number): void {
+    this.seek(this.clockNow() + deltaSec);
+  }
+
+  /** Jump to the start of a phrase. */
+  seekToPhrase(index: number): void {
+    if (this.starts[index] !== undefined) this.seek(this.starts[index]);
+  }
+
+  togglePlay(): void {
+    if (!this.seekable) return;
+    const at = this.clockNow();
+    this.clock.pos = at >= this.total - 0.1 ? 0 : at; // at the end, play starts over
+    this.clock.anchor = performance.now();
+    this.clock.playing = !this.clock.playing;
+  }
+
+  private handlers = {
+    onEvent: (e: ServerEvent) => this.onServerEvent(e),
+    onConn: (conn: Conn) => store.dispatch({ type: 'local/conn', conn }),
+  };
 
   /** Idempotent: safe under React StrictMode's double mount. */
   boot(): void {
     if (this.booted) return;
     this.booted = true;
 
-    const handlers = {
-      onEvent: (e: ServerEvent) => this.onServerEvent(e),
-      onConn: (conn: Conn) => store.dispatch({ type: 'local/conn', conn }),
-    };
+    const handlers = this.handlers;
     const replay = replayName();
+    this.replaying = !!replay;
     this.transport = replay
       ? createReplayTransport(replay, handlers)
-      : isMockMode() ? createMockTransport(handlers) : createSocketTransport(handlers);
+      : isMockMode() ? createMockTransport(handlers) : isHosted() ? createHttpTransport(handlers) : createSocketTransport(handlers);
 
     this.engineReady = loadRealEngine()
       .then((engine) => {
@@ -50,6 +94,19 @@ class Controller {
         engine.on((e) => this.onEngineEvent(e));
         return engine;
       });
+  }
+
+  /**
+   * Open a saved track and start playing it, without a page reload. Must be called from the click:
+   * a reload would lose the user gesture and the browser would refuse to start audio.
+   */
+  openSaved(name: string, prompt: string): void {
+    this.send({ type: 'stop' });
+    this.transport?.close();
+    this.replaying = true;
+    this.transport = createReplayTransport(name, this.handlers);
+    history.pushState(null, '', `?replay=${encodeURIComponent(name)}`);
+    this.compose(prompt || name);
   }
 
   /** Must be called from the user gesture (click or Enter) so the browser lets audio start. */
@@ -87,6 +144,11 @@ class Controller {
     this.finalQueued = false;
     this.instrumentsReady = false;
     this.started = false;
+    this.scores = [];
+    this.starts = [];
+    this.total = 0;
+    this.seekable = false;
+    this.clock = { pos: 0, playing: false, anchor: 0 };
   }
 
   private send(event: ClientEvent): void {
@@ -155,8 +217,10 @@ class Controller {
       case 'phrase':
         this.queued += 1;
         if (event.score.final) this.finalQueued = true;
+        this.scores.push(event.score);
         this.withEngine((engine) => {
-          engine.enqueue(event.score);
+          // A saved run on the real engine waits for its last phrase, then plays against the seek clock.
+          if (!(this.replaying && engine.playSynced)) engine.enqueue(event.score);
           this.maybeStart();
         });
         break;
@@ -171,6 +235,24 @@ class Controller {
   /** Playback begins once the instruments are in and two phrases (or the only one) are queued. */
   private maybeStart(): void {
     if (this.started || !this.engine || !this.instrumentsReady) return;
+    if (this.replaying && this.engine.playSynced) {
+      if (!this.finalQueued) return;
+      this.started = true;
+      let t = 0;
+      const timed = this.scores.map((s) => {
+        const at = t;
+        t += phraseSeconds(s);
+        return { ...s, startSec: at };
+      });
+      this.starts = timed.map((s) => s.startSec);
+      this.total = t;
+      this.seekable = true;
+      this.clock = { pos: 0, playing: true, anchor: performance.now() };
+      const engine = this.engine;
+      this.safely(() => engine.playSynced!(timed, { now: () => this.clockNow(), playing: () => this.clock.playing }));
+      store.dispatch({ type: 'local/playback_started' });
+      return;
+    }
     if (this.queued < 2 && !this.finalQueued) return;
     this.started = true;
     this.safely(() => this.engine!.start());
@@ -179,6 +261,12 @@ class Controller {
 
   private onEngineEvent(event: EngineEvent): void {
     if (store.getState().phase !== 'running') return;
+    // A seekable run does not finish: at the end the clock stops, and the listener can go back.
+    if (this.seekable && event.type === 'ended') {
+      this.clock.pos = this.total;
+      this.clock.playing = false;
+      return;
+    }
     store.dispatch({ type: 'local/engine', event });
     if (event.type === 'phrase_started') this.send({ type: 'phrase_started', index: event.index });
     else if (event.type === 'hold_started') this.send({ type: 'hold_started', afterIndex: event.afterIndex });

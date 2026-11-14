@@ -30,7 +30,7 @@ export const LineagePanel = memo(function LineagePanel() {
                 phrase <b className="mono">{e.index + 1}</b>
               </span>
               <span className="lin__eq" aria-hidden="true">=</span>
-              <span className="lin__text score-text" title={e.lineage}>{e.lineage}</span>
+              <span className="lin__text" title={e.lineage}>{e.lineage}</span>
               <span className="lin__state">{e.sounding ? 'sounding' : e.ahead ? 'ahead' : ''}</span>
             </li>
           ))}
@@ -39,7 +39,7 @@ export const LineagePanel = memo(function LineagePanel() {
           <ul className="lineage__themes">
             {themes.map((t) => (
               <li key={t.id} className="theme">
-                <span className="theme__id score-text">{t.id}</span>
+                <span className="theme__id">{t.id}</span>
                 <span className="theme__roll">
                   <Sparkline notes={t.notes} />
                 </span>

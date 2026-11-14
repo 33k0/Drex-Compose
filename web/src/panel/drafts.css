@@ -83,7 +83,7 @@
   min-width: 0;
 }
 
-.draft__id { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.draft__id { font-size: 1rem; font-weight: 600; line-height: 1.2; white-space: nowrap; }
 
 .draft__p { margin-left: auto; font-size: 1rem; font-weight: 500; color: var(--ink); }
 
@@ -300,3 +300,15 @@
   text-underline-offset: 0.2em;
   white-space: nowrap;
 }
+
+/* ── Hierarchy: the picked version and the reason lead; the rest is quiet ── */
+.drafts__subject { font-size: 0.86rem; font-weight: 400; color: var(--ink-2); }
+.draft__id { font-size: 0.9rem; font-weight: 500; color: var(--ink-2); }
+.draft.is-picked .draft__id { color: var(--ink); font-weight: 600; }
+.draft__stamp, .drafts__earlier-tag, .verdict__who { font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.draft__p { font-size: 0.9rem; color: var(--ink-3); }
+.draft.is-picked .draft__p { color: var(--ink); }
+.verdict__reason { font-size: 1.05rem; font-weight: 500; }
+.drafts__grid { grid-auto-rows: minmax(0, 11rem); align-content: start; }
+.draft__stamp { flex: none; margin-left: auto; }
+.draft__p { margin-left: 0; min-width: 2.6rem; text-align: right; }

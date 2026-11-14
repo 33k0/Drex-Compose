@@ -3,7 +3,7 @@
 
 import { memo, useMemo, type CSSProperties } from 'react';
 import type { QuestionView } from '../../../shared/types';
-import { humanize, pct } from '../format';
+import { humanize, pct, plainTerms } from '../format';
 
 const MAX_CHOICE_ROWS = 5;
 
@@ -16,7 +16,7 @@ interface OptionRow {
 }
 
 function optionLabel(q: QuestionView, key: string): string {
-  return q.options?.find((o) => o.key === key)?.label ?? humanize(key);
+  return plainTerms(q.options?.find((o) => o.key === key)?.label ?? humanize(key));
 }
 
 function optionRows(q: QuestionView): OptionRow[] {
@@ -72,7 +72,7 @@ function ChoiceQuestion({ q }: { q: QuestionView }) {
   return (
     <section className="q q--choice">
       <h3 className="q__label">
-        {q.label}
+        {plainTerms(q.label)}
         <PickingNote q={q} />
       </h3>
       <ol className="bars">
@@ -109,7 +109,7 @@ function NoulQuestion({ q }: { q: QuestionView }) {
   return (
     <section className="q q--noul">
       <h3 className="q__label">
-        {q.label}
+        {plainTerms(q.label)}
         <PickingNote q={q} />
       </h3>
       <div className={`yn ${saidYes ? 'is-yes' : 'is-no'}`}>
@@ -143,7 +143,7 @@ function ScoreQuestion({ q }: { q: QuestionView }) {
   return (
     <section className="q q--score">
       <h3 className="q__label">
-        {q.label}
+        {plainTerms(q.label)}
         <PickingNote q={q} />
         {picked && (
           <span className="q__answer">
@@ -173,7 +173,7 @@ export const QuestionCompact = memo(function QuestionCompact({ q }: { q: Questio
   const { answer, p, extra } = useMemo(() => summarise(q), [q]);
   return (
     <li className="qc">
-      <span className="qc__label" title={q.label}>{q.label}</span>
+      <span className="qc__label" title={plainTerms(q.label)}>{plainTerms(q.label)}</span>
       <span className="qc__answer" title={answer}>
         {answer}
         {extra && <span className="qc__extra">{extra}</span>}

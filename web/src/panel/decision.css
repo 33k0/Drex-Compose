@@ -302,7 +302,7 @@
 
 .tick {
   display: grid;
-  grid-template-columns: 2.7rem 7.6rem minmax(0, 1fr) auto;
+  grid-template-columns: 2.7rem 7.6rem minmax(0, 1fr);
   align-items: baseline;
   gap: 0.6rem;
   width: 100%;
@@ -342,3 +342,37 @@
 @keyframes tick-in {
   from { opacity: 0; transform: translateY(-0.5rem); }
 }
+
+/* ── Hierarchy: the question is the focal point; everything else steps back ── */
+.call__head { padding-bottom: 0.75rem; }
+.call__title { font-size: 1.45rem; font-weight: 600; color: var(--ink); }
+.q__label { font-size: 0.95rem; font-weight: 400; color: var(--ink-2); }
+.q__mode, .tick__type { font-size: 0.8rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-3); }
+.bar__label { font-size: 0.95rem; color: var(--ink-3); }
+.bar.is-picked .bar__label { color: var(--ink); }
+.bar__p { color: var(--ink-3); }
+.bar.is-picked .bar__p { color: var(--ink); }
+.ticker__head .panel__title { color: var(--ink-3); }
+.tick { font-size: 0.86rem; color: var(--ink-3); }
+
+/* ── Compact: the question takes only the room it needs; the log fills the rest ── */
+.decision__slot, .call, .call__body { flex: none; }
+.call__head { display: block; padding-bottom: 0.2rem; }
+.call__title { font-size: 1.15rem; }
+.q__label { font-size: 0.86rem; color: var(--ink-3); }
+.call__body { padding-bottom: 0.9rem; }
+.ticker { flex: 1 1 0; min-height: 0; }
+.ticker__list { flex: 1 1 0; height: auto; min-height: 0; }
+.tick { grid-template-columns: 2.7rem minmax(0, 1fr); }
+.tick__type { display: none; }
+
+/* The full history can be hundreds of rows: skip layout for the ones off screen. */
+.ticker__list li { content-visibility: auto; contain-intrinsic-size: auto 1.7rem; }
+
+/* ── The question gets the room; history is a short strip at the bottom ── */
+.decision__slot { flex: 1 1 0; min-height: 0; justify-content: center; }
+.call__body { padding-bottom: 0.4rem; }
+.bars { gap: 0.5rem; }
+.ticker { flex: none; }
+.ticker__list { flex: none; height: 6.4rem; }
+.tick { min-height: 1.5rem; font-size: 0.8rem; }

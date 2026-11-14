@@ -2,7 +2,7 @@
 
 import type {
   Articulation, CallType, EndingId, FormId, HarmonicLanguage, InstrumentId, KeyPlanId,
-  LayerSummary, MeterId, ModeId, SoundWorld, Stage,
+  LayerRole, LayerSummary, MeterId, ModeId, RulesView, SoundWorld, Stage,
 } from '../../shared/types';
 
 const INSTRUMENT_NAMES: Record<InstrumentId, string> = {
@@ -11,6 +11,7 @@ const INSTRUMENT_NAMES: Record<InstrumentId, string> = {
   horn: 'Horn', harp: 'Harp', timpani: 'Timpani', bass_drum: 'Bass drum', cymbal: 'Cymbal',
   drumkit: 'Drum kit', celesta: 'Celesta', glockenspiel: 'Glockenspiel', vibraphone: 'Vibraphone',
   tam_tam: 'Tam-tam', sub: 'Sub bass', pad: 'Pad', pluck: 'Pluck', kick808: '808 kick', noise: 'Noise',
+  keys: 'Electric piano', lead: 'Synth lead', supersaw: 'Supersaw', synth_bass: 'Synth bass', bell: 'Bell synth', brass: 'Synth brass',
 };
 
 export function instrumentName(id: InstrumentId | string): string {
@@ -123,4 +124,75 @@ export function backdropUrl(file: string): string {
   if (file.startsWith('/')) return file;
   if (file.startsWith('assets/')) return `/${file}`;
   return `/assets/backdrops/${file}`;
+}
+
+// ───────────────────────────── Plain-language helpers ─────────────────────────────
+
+const SMALL_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'for', 'of', 'on', 'in', 'at', 'to', 'by', 'with', 'from', 'into']);
+
+const CUT_AT = new Set(['for', 'about', 'with', 'at', 'in', 'on', 'over', 'under', 'during', 'while', 'that', 'where', 'when']);
+
+/**
+ * A short title from the prompt: drop the leading article, stop at the first comma, and stop at
+ * a trailing clause once there are three words. "a funky upbeat groove for a summer block party"
+ * -> "Funky Upbeat Groove". The full prompt stays in the tooltip and the summary line.
+ */
+export function titleFromPrompt(prompt: string): string {
+  const clause = prompt.trim().replace(/^["“'‘]+/, '').split(/[,.;:!?]/)[0];
+  let words = clause.split(/\s+/).filter(Boolean);
+  if (words.length > 1 && /^(a|an|the)$/i.test(words[0])) words = words.slice(1);
+  const cut = words.findIndex((w, i) => i >= 3 && CUT_AT.has(w.toLowerCase()));
+  if (cut > 0) words = words.slice(0, cut);
+  words = words.slice(0, 6);
+  return words
+    .map((w, i) => (i > 0 && i < words.length - 1 && SMALL_WORDS.has(w.toLowerCase()) ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+const GROOVE_NAMES: Record<NonNullable<RulesView['groove']>, string> = {
+  house: 'house', boom_bap: 'boom-bap', trap: 'trap', funk: 'funk', lofi: 'lo-fi',
+};
+
+function listJoin(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+function aboutLength(sec: number): string {
+  if (sec < 75) return `about ${Math.round(sec / 5) * 5} seconds`;
+  const min = Math.round(sec / 30) / 2;
+  return `about ${min} ${min === 1 ? 'minute' : 'minutes'}`;
+}
+
+/** One sentence anyone can read: what kind of piece, key, speed, length, instruments. */
+export function pieceSummary(rules: RulesView): string {
+  const kind = rules.style === 'beat_driven'
+    ? `${rules.groove ? `${GROOVE_NAMES[rules.groove]} ` : ''}groove`
+    : `${rules.styleName.toLowerCase()} piece`;
+  const article = /^[aeiou]/i.test(kind) ? 'An' : 'A';
+  const instruments = listJoin(rules.palette.map((id, i) => (i === 0 ? instrumentName(id) : instrumentName(id).toLowerCase())));
+  return `${article} ${kind} in ${rules.keyName}, ${aboutLength(rules.lengthSec)} long, played on ${instruments}.`;
+}
+
+/** Loudness in words instead of score markings. Indexed like DYNAMIC_NAMES. */
+export const LOUDNESS = ['very quiet', 'quiet', 'fairly quiet', 'fairly loud', 'loud', 'very loud', 'loudest'] as const;
+
+export const LAYER_NAMES: Record<LayerRole, string> = {
+  melody: 'Melody', counter: 'Second melody', inner: 'Harmony', bass: 'Bass', pedal: 'Drone',
+  figuration: 'Patterns', texture: 'Texture', pulse: 'Beat', accents: 'Accents',
+};
+
+export function capitalize(text: string): string {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+/**
+ * The server calls them "draft a, b, c"; the panel calls them "Version 1, 2, 3". Question text
+ * comes from the server, so it is reworded on display to match.
+ */
+export function plainTerms(text: string): string {
+  return text
+    .replace(/\b(d)raft ([a-h])\b/gi, (_m, d: string, letter: string) => `${d === 'D' ? 'V' : 'v'}ersion ${letter.toLowerCase().charCodeAt(0) - 96}`)
+    .replace(/\bDraft(s?)\b/g, 'Version$1')
+    .replace(/\bdraft(s?)\b/g, 'version$1');
 }
