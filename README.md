@@ -1,188 +1,326 @@
 # Drex Composer
 
-Prompt to music. You type a prompt; Drex sets the rules of a piece, writes a theme, and develops it
-phrase by phrase so nothing repeats exactly. Drex makes every musical decision by answering
-multiple-choice, yes/no and score questions. Code plays the notes, measures facts for Drex, and
-enforces only what Drex chose.
+**Drex cannot create anything. It can only choose. So we turned composing into choosing, and Drex wrote the music.**
 
-## Run it
+Type a prompt such as *"swimming alone at night"* and get about three minutes of original music.
+Every musical decision in it, about 400 of them, was made by [Drex](https://console.nace.ai/docs/drex),
+a model that cannot write a single note.
 
-```bash
-npm install
-npm run dev          # server on :8787, panel on http://localhost:5173
-```
+Built for the Nace Drexathon (Wildcard track) by EKo and Iniyan Kannappan.
 
-Open http://localhost:5173, type a prompt, press Enter.
+## Contents
 
-**Drex key.** Copy `.env.example` to `.env` and set `NACE_API_KEY=nace_sk_...`. Without a key the
-project still runs: a local **stand-in** answers instead, the panel shows a `STAND-IN` badge, and no
-request leaves the machine. The stand-in is a set of hand-written heuristics (one prior per option,
-in the same files that build the questions). It exists so the engine, the sound and the panel can
-be built and rehearsed; it is not Drex and proves nothing about Drex's taste. The real client has
-been run against the live API: whole pieces compose end to end on `drex-max-v1.1` in about a minute
-on the paid tier. `npm run ping` makes one tiny live call to check a key.
+- [The problem](#the-problem)
+- [The idea](#the-idea)
+- [Listen](#listen)
+- [How we used Drex, Intern and NDI](#how-we-used-drex-intern-and-ndi)
+- [How it works](#how-it-works)
+- [What Drex decides](#what-drex-decides)
+- [The theory Drex is given](#the-theory-drex-is-given)
+- [Run it locally](#run-it-locally)
+- [Deploy it on Vercel](#deploy-it-on-vercel)
+- [Intern, the producer](#intern-the-producer)
+- [Evaluation](#evaluation)
+- [Project layout](#project-layout)
+- [Known limits](#known-limits)
+- [Credits](#credits)
 
-Other commands:
+## The problem
 
-| Command | What it does |
+Drex is a decision model. It has no way to produce a note, a word or a file. All it can do is answer a
+question someone else wrote, in one of three forms:
+
+| Question type | What Drex returns |
 |---|---|
-| `npm run compose -- "a prompt" [--seed 7] [--midi out.mid] [--verbose]` | Compose a whole piece without the browser and print every choice. `--midi` writes a file you can audition in any player. |
-| `npm run ping` | One tiny live Drex call, raw response printed, then the same questions through the gateway. |
-| `npm test` | Unit tests: transformations, facts, chord options, the Drex client, whole-piece invariants. |
-| `npm run eval` | The evaluation table below. |
-| `npm run build && npm start` | Production build, served by the server on :8787. |
-| `node tools/ndi/ingest.mjs --all` | Rebuild the theory digest with NDI (needs a key). |
-| `node tools/make-backdrops.mjs` | Regenerate the placeholder backdrops. |
+| Choice | A probability for each option |
+| Yes or no | The probability of yes |
+| Score | A probability for each level of a scale |
 
-**Replaying a saved piece.** `npm run compose -- "a prompt" --json eval/results/<name>/events.json`
-saves a run; `http://localhost:5173/?replay=<name>` then plays it through the real engine (samples,
-hall, mix) without calling Drex again.
+So how do you get something as open-ended as a piece of music out of a model that can only pick?
 
-`DREX_PICKER=random` swaps Drex for a random picker (the control for the blind listening test).
-`DREX_DUMP_DIR=some/dir` saves the first three request bodies of each call type exactly as Drex
-would receive them.
+## The idea
+
+Break composing into small questions and let Drex answer every one.
+
+- **Drex decides.** Style, key, tempo, instruments, the plan of the piece, every note of the theme, every
+  chord, every inner voice, which drafts are good enough, who plays and how loud.
+- **Code does not decide.** It lays out the options, plays the notes, measures facts (how far a melody
+  leaps, which instruments are resting, how similar two phrases are) and enforces what Drex chose.
+- **Nothing is hidden.** The page shows each question, the options, Drex's probabilities and its pick,
+  while the music plays.
+
+Two kinds of music are supported: **orchestral** pieces (piano, strings, winds, percussion from real
+samples) and **smooth beats** (lo-fi, boom-bap, trap, funk and house, on synths and a drum kit).
+
+## Listen
+
+Five pieces composed by live Drex are saved in [`replays/`](replays/) and play in the browser with every
+decision visible. On a running copy of the app, open:
+
+| Piece | Prompt | Address |
+|---|---|---|
+| Night swimming | "swimming alone at night" | `/?replay=night-swimming` |
+| Night swimming, produced by Intern | "swimming alone at night" | `/?replay=night-swimming-by-intern` |
+| Smooth beats | "smooth late-night beats to relax to" | `/?replay=smooth-beats` |
+| Funk | "a funky upbeat groove for a summer block party" | `/?replay=funk` |
+| Trap | "a late-night rap beat with heavy 808s" | `/?replay=trap` |
+
+A saved piece has a seek bar: play, pause, skip, or click the tension plan to jump to a phrase.
+
+## How we used Drex, Intern and NDI
+
+| Tool | Role | Evidence in this repository |
+|---|---|---|
+| **Drex Max** (`drex-max-v1.1`) | Makes every musical decision: about 400 sets of questions per piece | [`server/calls/`](server/calls/) holds every question; [`replays/`](replays/) holds five full runs with each answer and its probabilities |
+| **Intern** | The producer: commissions a piece, waits, measures it, writes a report. Drex is its System 1 and checks every turn | [`AGENTS.md`](AGENTS.md), [`INTERN.md`](INTERN.md), [`tools/intern.ts`](tools/intern.ts). A real run took 16 turns with 42 Drex checks |
+| **NDI** | Parsed a 136-page theory book and extracted page-cited rules | [`tools/ndi/`](tools/ndi/), [`context-pack/digest.ndi.json`](context-pack/digest.ndi.json): 32 rules from three chapters of Goetschius |
+
+**How Drex's answers are used.** Because Drex returns probabilities, there are two ways to pick:
+
+- *Drafts* (theme notes, phrase direction, chords, voice leading) are **sampled** from the probabilities,
+  so four drafts of a phrase differ.
+- *Decisions* (rules, plan, judging, orchestration) take the **top pick**.
+
+**The prompt steers it.** Measured on live Drex:
+
+| Prompt | How Drex chose the climax to arrive |
+|---|---|
+| "swimming alone at night" | a still, bright clearing: 98% |
+| "a storm breaking over a battlefield" | a wall of sound: 78% |
+| "a late-night rap beat with heavy 808s" | song form "hook first": 100% |
+| "lofi beats to study to" | song form "one groove, no chorus": 73% |
+
+A full piece takes about a minute of Drex calls on the paid tier and costs roughly 20 cents.
 
 ## How it works
 
+```mermaid
+flowchart TD
+  P[Prompt] --> S[Setup: style, key, tempo, instruments]
+  S --> PL[Plan: sections, tension, how the climax arrives]
+  PL --> T[Theme: six drafts, note by note]
+  T --> TJ{Drex judges}
+  TJ -- none good enough --> T
+  TJ -- picks one --> D[Phrase direction]
+  D --> DR[Four sampled drafts]
+  DR --> C[Chords and inner voices for each draft]
+  C --> F[Code measures facts]
+  F --> J{Drex judges}
+  J -- rejects all, gives a reason --> D
+  J -- accepts one --> O[Orchestration and mix: about 60 answers]
+  O --> B[Browser plays the phrase]
+  B --> D
 ```
-prompt ─▶ setup ─▶ plan ─▶ backdrop ─▶ theme drafts ─▶ theme judge
-                                                        │
-          ┌─────────────────────────────────────────────┘
-          ▼
-   for each phrase:  direction ─▶ 4 sampled drafts ─▶ chord path ─▶ voice leading
-                     ─▶ facts (code) ─▶ judge ─┬─ accept ─▶ orchestration and mix ─▶ buffer ─▶ browser
-                                               └─ reject all ─▶ reason into the state ─▶ redraft (no cap)
-```
 
-| Part | Where | Owns |
-|---|---|---|
-| Composer core | `server/core/`, `server/piece.ts` | Notation, scales and chords, the 20 transformations, lineage, the fact measurer, the state builder |
-| Calls | `server/calls/` | Every question Drex is asked: setup, plan, themes, phrase direction, chord path, voice leading, judge, orchestration, hold, ending |
-| Drex gateway | `server/gateway/` | API key, queue, rate limiting (120/min and 8 in flight on free, 1,200 and 16 on paid), retries, the stand-in |
-| Context pack | `context-pack/`, `server/pack.ts` | Theory digest from four books, style sheets, worked examples, sliced per call type |
-| NDI ingester | `tools/ndi/` | Parses the books into the pack (offline) |
-| Audio engine | `web/src/audio/` | Tone.js: samplers, synths, convolution reverb, effects, look-ahead scheduling, holds |
-| Live panel | `web/src/panel/` | Rules, tension curve with a now marker, current question and probabilities, drafts and verdicts, lineage, layers, hold marker, backdrop |
+1. **Setup.** Drex answers about 40 questions that fix the rules of the piece.
+2. **Plan.** Drex lays out the sections, a tension level for each, where the climax falls and how it arrives.
+3. **Theme.** Six drafts are written one note at a time from Drex's answers. Drex judges them and may
+   reject them all.
+4. **Phrases.** For each phrase Drex chooses its length and material, four drafts are sampled, Drex picks
+   every chord and voice, code measures facts about each draft, and Drex accepts one or rejects all with a
+   reason that feeds the next round. There is no cap on redrafting.
+5. **Orchestration.** For the accepted phrase Drex decides which layers play, on which instruments, how
+   loud, how the phrase begins and closes, and every effect amount.
+6. **Playback.** The browser plays each phrase with sampled instruments and a real concert-hall reverb
+   while the next ones are composed.
 
-**Picking.** Draft calls (theme shape and notes, phrase direction, chord path, voice leading) are
-sampled from Drex's probabilities. Decisions (setup, plan, judges, orchestration, hold, ending) take
-the top pick. Drafts are shuffled before judging.
-
-**Playback and holds.** The server composes two to three phrases ahead of the browser. If the buffer
-runs dry the last chord sustains and a Hold call chooses how it evolves; nothing loops.
-
-**One phrase costs about 23 to 33 Drex calls.** In the slow style that is roughly 110 calls
-a minute, right at the free tier's 120. Faster styles need more (about 235 a minute at 124 BPM), so
-real-time playback of anything but the slow style needs the raised limit or a top-up.
+One phrase takes 16 to 33 Drex calls depending on style.
 
 ## What Drex decides
 
-Setup: style sheet, the groove family of a beat-driven piece (house, boom-bap, trap, funk, pop),
-tempo, meter, key centre, mode, harmonic language, palette (a yes/no per instrument, asked as a pool
-to draw on), sound world, length (2:30 to 3:30), form, key-change plan, ending. Plan: each section's
-role, tension (1 to 7) and whether it leaves the theme, the climax position, how the climax arrives
-(a swell, a hit, a held breath then a still bright clearing that is only a little louder, a held
-breath then a wall of sound, the wall with the tempo broadening, or in beat-driven pieces the drop), what the melody is at the climax (the theme back whole, the theme at
-half speed, or development carrying on), whether the theme is stated twice at the start, and whether
-the piece needs a counter-theme and a contrast theme; tension is revised by Drex at every section end. A beat-driven piece is planned as a song: Drex picks one song form (verse and chorus; verse,
-pre-chorus, chorus; hook first; one groove), the chorus is composed once and comes back with the same
-melody and chords, and only its orchestration is decided anew each time. Theme: how many bars it fills (one to three), note count, contour,
-rhythm cell, start and end degrees, where the one leap sits, then each note in turn; six drafts and
-a judge. Every phrase: its length (two to six bars; loop music stays at four), material and transformations for each half, counter-melody, seven texture
-transformations, harmonic rhythm, ending, modulation; every chord and bass move; every inner voice
-at every chord change; the verdict; then about sixty orchestration and mix answers: how full the
-texture is and which layers play, the melody's instrument and register (each option states how far it
-starts from where the last phrase ended and how its top note compares with the highest so far), a
-second instrument doubling the melody, how the texture moves inside the phrase (late entries,
-drop-outs, a bare last bar), how the phrase closes (run on, a breath, a silence), how the melody begins (on the downbeat, with a
-pickup before the bar line, or a beat late), whether instruments change over cleanly or dovetailed
-(new ones steal in a bar early, old ones linger a bar), how the dynamic
-moves inside it (steady, crescendo, diminuendo, swell), patterns, bass rhythm, accents, a pause
-before a hit, six effect amounts, chorus, sidechain.
-
-Code gives Drex facts with those questions and never a verdict: which instruments have played
-without a break and which are resting, the fullest phrase so far, the level the last phrase ended at,
-the lengths of the last phrases and how they began, and what the fullest chorus so far used.
-
-A phrase can begin before its own bar line, and those notes are written into the end of the phrase
-before it. So the server sends each phrase only once the next one has been composed.
-
-## Evaluation (`npm run eval`)
-
-| Test | How it is run here | Result on the stand-in |
-|---|---|---|
-| Drex follows theory | 200 hand-written cases, 20 per call type, in `eval/cases/`. Pass is 16 of 20. `--compare drex-v2.0` runs two models side by side to choose the model per call type. | **Not run: needs a key.** |
-| Not random | `npm run eval -- listening` writes `A.mid` (Drex) and `B.mid` (random picker) for blind listening. | Needs ears. |
-| Theme survives | Same command writes `theme.mid` and `late-phrase.mid`. | Needs ears. |
-| No repetition | Similarity across all phrase pairs of three pieces. | Pass: 521 pairs, none above the copy level, closest 71%. |
-| Judge works | Two planted copies and an off-theme draft must all be rejected; honest drafts must get through. | Pass. |
-| Prompt matters | Two opposite prompts. | Pass: 8 of 8 rules differ. |
-| Style choice | Nine prompts, three aimed at each style. | Pass: 9 of 9. |
-| Speed | Calls per phrase and calls per minute needed. | 26 per phrase. Round-trip times are only meaningful with a key. |
-
-Results on the stand-in check the engine and the facts it measures. They say nothing about Drex.
-
-**Rehearsing rejections and holds without a key.** The stand-in drafts and judges with the same
-heuristics, so it almost never rejects its own drafts (0 rejected rounds in 8 test pieces). To see
-the rejected-draft and hold states: open `http://localhost:5173/?mock=1` for a scripted run that
-includes both, or set `STANDIN_RPM=120` in `.env` to rehearse free-tier pacing, which runs the
-buffer dry in the faster styles and triggers real holds.
-
-## Values to tune by ear
-
-Proposed starting points, all in one place each: six theme drafts (`THEME_DRAFTS`,
-`server/calls/themes.ts`); four phrase drafts, copy level 80%, drift level 40% (`PHRASE_DRAFTS`,
-`COPY_LEVEL`, `DRIFT_LEVEL`, `server/calls/phrase.ts`); a look-ahead of three phrases
-(`BUFFER_AHEAD`, `server/session.ts`).
-
-## Backdrops
-
-Drex picks one backdrop per piece from `assets/backdrops/backdrops.json`. The eight images there are
-**placeholders** drawn by a script. The plan is Adobe Firefly images made in advance: generate each
-from the prompt in `assets/backdrops/FIREFLY.md`, save it as `<id>.jpg` in that folder, and it
-replaces the placeholder automatically.
-
-## Theory sources
-
-All four books were found and are in `context-pack/books/` with their sources.
-
-| Book | Source |
+| Stage | Decisions |
 |---|---|
-| Rimsky-Korsakov, *Principles of Orchestration* | Project Gutenberg ebook 33900 |
-| Goetschius, *Exercises in Melody-Writing* (Schirmer, 1900) | archive.org scan, OCR |
-| Tchaikovsky, *Guide to the Practical Study of Harmony* (tr. Krall and Liebling) | archive.org, OCR |
-| Prout, *Musical Form* (Augener, 1893) | archive.org scan, OCR |
+| **Setup** | Style sheet; groove family for beats (lo-fi, boom-bap, trap, funk, house); tempo; meter; key and mode; harmonic language; the palette (yes or no for each instrument); sound world; length (2:30 to 3:30); form; key-change plan; ending |
+| **Plan** | Each section's role and tension (1 to 7); whether a section leaves the theme; where the climax falls; how it arrives; what the melody is at the climax; whether the theme is stated twice; whether a counter-theme and a contrast theme are needed. Tension is revised at every section end |
+| **Song form** (beats) | One of four forms (verse and chorus; verse, pre-chorus, chorus; hook first; one groove) and one loudness level for each kind of part, so every chorus is a peak and every verse drops back |
+| **Theme** | How many bars it fills (1 to 3); note count; contour; rhythm cell; start and end notes; where its one leap sits; then each note in turn |
+| **Each phrase** | Length (2 to 6 bars; beats stay at 4); material and transformations for each half; counter-melody; seven texture choices; how fast the chords change; the ending; any modulation |
+| **Harmony** | Every chord, every bass move, and how each inner voice moves at every chord change |
+| **Judging** | Which draft is played, or that none is; the reason for a rejection |
+| **Orchestration** | How full the texture is; which layers play; the melody's instrument and register; a second instrument doubling it; how the melody begins (on the beat, with a pickup, a beat late); whether instruments change over cleanly or dovetailed; who drops out mid-phrase; how the phrase closes (run on, a breath, a silence); how loudness moves inside it; drum and bass patterns; accents; six effect amounts |
 
-`context-pack/digest.json` holds 178 rules, each with a page reference and a supporting quote in
-`digest.evidence.json`; 28 are marked `own` (general knowledge the 1890s books do not cover, such as
-where a climax goes). **The digest shipped here was curated by reading the texts, not produced by
-NDI:** the NDI pipeline in `tools/ndi/ingest.mjs` (parse, split by chapter, classify by topic,
-extract rules, keep page references) is written to the documented API and dry-run tested, but has
-not run against the live service. Nine places where the NDI docs were silent are marked
-`DOCS-UNVERIFIED` in that file.
+**How the climax can arrive** (Drex's choice in the plan):
 
-**Rules for beat-driven pieces.** The four books stop in 1900, so `context-pack/modern.json` adds 40
-rules on grooves, hooks, bass, arrangement and production for pop, hip-hop, trap, funk and house.
-They are hand-written from general knowledge (marked `own`), not parsed from a source, and are sent
-only when the piece uses the beat-driven sheet. In that style a looped motif is right, so the phrase
-judge is told not to reject repeats.
+| Arrival | What happens |
+|---|---|
+| Swell | No break; the peak arrives at the top of a crescendo |
+| Hit | One accented blow on the same texture |
+| Clearing | A held breath, then the motion stops and the music opens out, still and bright, only a little louder |
+| Wall | A held breath, then the whole ensemble at full volume |
+| Broadened wall | The wall, with the tempo slowing |
+| Drop (beats) | The beat thins for a bar, then everything returns at full weight |
 
-## Running it on Vercel
+**Facts, never verdicts.** With each question code gives Drex measured facts, for example: how far a
+melody option starts from where the last phrase ended, whether its top note beats the highest so far,
+which instruments have played without a break, the lengths of the last few phrases, and what the fullest
+chorus so far used.
 
-The app deploys as a static site plus one function:
+## The theory Drex is given
 
-- **Saved pieces** in `replays/` are served as files, so `/?replay=night-swimming` plays with no server.
-- **Composing** runs in `api/compose.js`: one request composes one piece (about a minute) and streams
-  every Drex decision back to the page. It is the bundle of `server/vercel.ts`; after changing server
-  code run `npm run build:api` and commit the result.
+Drex knows little music theory on its own, so the rules travel with each question.
 
-To deploy: import the repository in Vercel (the settings come from `vercel.json`), then add the
-environment variables `NACE_API_KEY`, `DREX_MODEL=drex-max-v1.1`, `DREX_TIER=paid` and
-`DREX_API_URL=https://drex.nace.ai/v1/systemone`. Without a key the function answers with the offline
-stand-in. Anyone who opens the site can compose, and each piece costs Drex credit.
+| Source | Rules | Notes |
+|---|---|---|
+| Rimsky-Korsakov, *Principles of Orchestration* | 32 | Project Gutenberg ebook 33900 |
+| Goetschius, *Exercises in Melody-Writing* (1900) | 37 | archive.org scan |
+| Tchaikovsky, *Guide to the Practical Study of Harmony* | 32 | archive.org scan |
+| Prout, *Musical Form* (1893) | 49 | archive.org scan |
+| Our own | 31 | General knowledge the 1890s books do not cover, such as where a climax goes. Marked `own` |
+| Rules for beats | 46 | Hand-written (grooves, hooks, bass, arrangement, song form). Sent only to beat pieces. Marked `own` |
 
-Differences from running locally: the function cannot hear the browser's playhead, so a piece is
-composed straight through instead of a few phrases ahead of playback.
+- The 150 book rules each carry a page reference and a supporting quote
+  ([`context-pack/digest.json`](context-pack/digest.json), `digest.evidence.json`). A checker confirms each
+  quote is on the cited page: `node tools/ndi/check-digest.mjs`.
+- Each kind of decision receives its own slice of the rules, between 8 and 40 of them.
+- Three style sheets ([`context-pack/style-sheets.json`](context-pack/style-sheets.json)) describe the
+  orchestral, beat and playful styles.
+- The page's theory panel shows which rules each decision received and opens the book at the cited page.
+
+**What NDI did.** The digest Drex composes from was curated by reading the books. Separately, NDI parsed
+the Goetschius scan (136 pages), classified its first three chapters and extracted 32 page-cited rules
+into [`context-pack/digest.ndi.json`](context-pack/digest.ndi.json). Those rules are not fed to Drex: they
+are vaguer than the curated ones, and we use them to check the curated pack against the source. The
+pipeline for all four books is in [`tools/ndi/ingest.mjs`](tools/ndi/ingest.mjs).
+
+## Run it locally
+
+Needs Node 24 or newer.
+
+```bash
+npm install
+cp .env.example .env     # then set NACE_API_KEY=nace_sk_...
+npm run dev              # server on :8787, page on http://localhost:5173
+```
+
+Open http://localhost:5173, type a prompt and press Enter.
+
+**Without a key** the project still runs: an offline stand-in answers in place of Drex and the page shows
+a `STAND-IN` badge. The stand-in is a set of hand-written guesses for building and testing. It is not Drex
+and says nothing about Drex's taste.
+
+**If Drex answers 403.** Nace documents two hosts for the same API. The app tries `console.nace.ai`, and
+switches to `drex.nace.ai` if the first answers with a security-check page. To pin one, set `DREX_API_URL`.
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Server and page, reloading on changes |
+| `npm run compose -- "a prompt" [--json out.json] [--midi out.mid]` | Compose a whole piece without the browser and print every choice |
+| `npm run audit -- <run>` | Measured facts about a saved run: sections, loudness, instruments, where the climax falls |
+| `npm run intern -- "a prompt"` | Hand a commission to Intern (see below) |
+| `npm run ping` | One tiny live Drex call, to check a key |
+| `npm test` | 71 tests |
+| `npm run typecheck` | Type check |
+| `npm run eval` | The evaluation table below |
+| `npm run build && npm start` | Production build served on :8787 |
+
+**Saving and replaying a piece.**
+`npm run compose -- "a prompt" --json eval/results/<name>/events.json` saves a run, and
+`http://localhost:5173/?replay=<name>` plays it without calling Drex again.
+
+Environment variables are listed in [`.env.example`](.env.example).
+
+## Deploy it on Vercel
+
+The app deploys as a static site plus two small functions.
+
+| Part | How it runs on Vercel |
+|---|---|
+| Saved pieces | Static files from [`replays/`](replays/) |
+| Theory panel and the four books | Static files written at build time |
+| Composing a new piece | [`api/compose.js`](api/compose.js): one request composes one piece and streams each Drex decision to the page |
+| Health check | [`api/health.js`](api/health.js): open `/api/health` to see whether the deployment has the key and can reach Drex (the key is never shown) |
+
+1. Import the repository in Vercel. The settings come from [`vercel.json`](vercel.json).
+2. Add the environment variables `NACE_API_KEY`, `DREX_MODEL=drex-max-v1.1` and `DREX_TIER=paid`.
+3. Deploy. New variables only apply to new deployments, so redeploy after changing them.
+
+- The functions are bundles of [`server/vercel.ts`](server/vercel.ts) and `server/vercel-health.ts`.
+  After changing server code run `npm run build:api` and commit the result.
+- Anyone who opens the site can compose, and each piece costs Drex credit.
+- A function cannot hear the browser's playhead, so on Vercel a piece is composed straight through
+  instead of a few phrases ahead of playback.
+
+## Intern, the producer
+
+[Intern](https://github.com/nace-ai/intern) is Nace's agent harness. Its System 2, any chat model, does
+the work; its System 1, Drex, watches every turn.
+
+```bash
+uv tool install "intern-agent @ git+https://github.com/nace-ai/intern"
+npm run dev                                   # in one terminal
+npm run intern -- "swimming alone at night"   # in another
+```
+
+Following [`AGENTS.md`](AGENTS.md), Intern:
+
+1. commissions the piece from the running server, passing the words on unchanged;
+2. waits about a minute while Drex composes it;
+3. measures it with `npm run audit`;
+4. writes `eval/results/<id>/REPORT.md` with the link to listen and the measured facts.
+
+Intern makes no musical choice and is told not to describe music it has not heard, so a piece it produces
+is exactly what the app composes on its own. Setup details are in [`INTERN.md`](INTERN.md).
+
+The commission API it uses is open to any agent:
+
+```bash
+curl -X POST http://localhost:8787/api/commissions \
+  -H "Content-Type: application/json" -d '{"prompt": "swimming alone at night"}'
+curl http://localhost:8787/api/commissions/<id>     # status, then listen_url, midi_url and a summary
+```
+
+## Evaluation
+
+`npm run eval` runs the table below. The results shown are from the offline stand-in: they check the
+engine and the facts it measures, and say nothing about Drex.
+
+| Test | How it is run | Result on the stand-in |
+|---|---|---|
+| Drex follows theory | 200 hand-written cases, 20 per call type, in [`eval/cases/`](eval/cases/). Pass is 16 of 20 | Not run against live Drex |
+| Not random | Writes a Drex piece and a random-picker piece for blind listening | Needs ears |
+| Theme survives | Writes the theme and a late phrase for listening | Needs ears |
+| No repetition | Similarity across all phrase pairs of three pieces | Pass: 521 pairs, closest 71% |
+| Judge works | Two planted copies and an off-theme draft must be rejected | Pass |
+| Prompt matters | Two opposite prompts | Pass: 8 of 8 rules differ |
+| Style choice | Nine prompts, three aimed at each style | Pass: 9 of 9 |
+
+**How changes were checked.** Each change to the composer was checked by composing a piece on live Drex
+and measuring its note data: leaps where phrases join, silence, instruments per phrase, loudness per
+section, where the highest note falls. `npm run audit` prints those measurements for any saved run.
+
+## Project layout
+
+| Part | Where | What it holds |
+|---|---|---|
+| Questions | [`server/calls/`](server/calls/) | Every question Drex is asked, and the code that turns answers into notes |
+| Composer core | [`server/core/`](server/core/), [`server/piece.ts`](server/piece.ts) | Scales and chords, 20 melodic transformations, the fact measurer, the text sent with each question |
+| Drex client | [`server/gateway/`](server/gateway/) | Key, queue, rate limits, retries, host fallback, the stand-in |
+| Theory pack | [`context-pack/`](context-pack/), [`server/pack.ts`](server/pack.ts) | Rules, style sheets, worked examples, the four books |
+| Server | [`server/index.ts`](server/index.ts), [`server/session.ts`](server/session.ts) | Live sessions over a socket, replays, the commission API |
+| Audio | [`web/src/audio/`](web/src/audio/) | Sampled instruments, ten synths, hall reverb, scheduling, seeking |
+| Page | [`web/src/panel/`](web/src/panel/) | Rules, tension plan, current question and probabilities, drafts and verdicts, lineage, layers, theory panel, seek bar |
+| NDI | [`tools/ndi/`](tools/ndi/) | Book pipeline and the pack checker |
+| Agent tools | [`tools/intern.ts`](tools/intern.ts), [`tools/audit.ts`](tools/audit.ts) | Intern as producer; measured facts |
+| Vercel | [`api/`](api/), [`vercel.json`](vercel.json), [`replays/`](replays/) | Functions, settings, saved pieces |
+
+## Known limits
+
+- **Drex cannot hear.** It judges notation and measured facts.
+- **Drex only picks from options it is given.** Its range is the option lists and the transformation library.
+- **Checked by measurement, not by ear.** Most of the composer was tuned against note data from live
+  pieces. Balance, realism and taste still need a listener.
+- **The six newest synth sounds** (electric piano, lead, supersaw, synth bass, bell, brass) have volumes
+  set by estimate.
+- **Runs are not repeatable.** The same prompt gives a different piece each time: drafts are composed in
+  parallel and draw from one random stream in arrival order.
+- **Pop was dropped.** Chart pop needs vocals and production this engine does not have, so the beat style
+  covers smooth and groove-based beats only.
+- **The beat rules are hand-written**, not drawn from a book.
+- **NDI has run on one book**, three chapters. The curated digest, not the NDI output, is what Drex reads.
+- **Intern has been run once** end to end, with Claude Haiku 5.5 as its System 2.
+- **The Vercel functions were tested on a development machine**, not verified on a live deployment by us.
+- **The backdrops are placeholders** drawn by a script.
+- **No celesta**, and the double basses are a solo contrabass: the free sample libraries have neither.
 
 ## Credits
 
@@ -203,20 +341,3 @@ Dalzell), CC0. Glockenspiel and vibraphone from VCSL by Versilian Studios, CC0.
 `assets/samples/drumkit/` are modified samples and stay under CC BY-SA 3.0 wherever they are served.
 
 Full detail, including every modification, is in `assets/CREDITS.md`.
-
-## Known limits
-
-- **Drex can't hear.** It judges notation and measured facts.
-- **Drex only picks from options it is given.** Its range is the option lists and the transformation library.
-- **Measured, not heard.** Changes since the first live runs were checked against note data from
-  live pieces (leaps at phrase joins, silence, instruments per phrase, where the top note falls),
-  not by ear.
-- **Runs are not repeatable.** The same prompt and seed give a different piece each time: drafts
-  are composed in parallel and draw from one random stream in arrival order.
-- **Nothing here has been heard by the person who built it.** The sample library was verified
-  numerically (every file decodes, every pitch checked) and the engine is confirmed to produce signal
-  in a browser, but balance, realism and taste all still need tuning by ear.
-- **No celesta** (none exists in the free libraries used); **the double basses are a solo
-  contrabass** (VSCO 2 CE has no bass section).
-- The OpenAIR site's certificate had expired when the hall recordings were fetched, so their licence
-  and attribution text were read from archived copies of the OpenAIR pages.
