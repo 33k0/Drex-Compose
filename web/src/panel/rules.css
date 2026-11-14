@@ -120,3 +120,9 @@
 .rules__field--lead .rules__value { font-weight: 600; color: var(--ink); }
 .rules__palette { flex: 0 1 auto; border-left: 1px solid var(--rule); }
 .rules__palette .rules__value { display: block; font-size: 0.95rem; color: var(--ink-2); text-overflow: ellipsis; }
+
+/* Fields never squeeze into each other: each keeps its width, and only the instrument list (last) gives way, with an ellipsis. */
+.rules { justify-content: flex-start; gap: 0; overflow: hidden; }
+.rules > * { flex: none; padding: 0 1.6rem 0 0; }
+.rules > .rules__palette { flex: 1 1 0; min-width: 6rem; padding: 0 0 0 1.6rem; }
+.rules__palette .rules__value { overflow: hidden; }

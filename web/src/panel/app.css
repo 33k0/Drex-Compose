@@ -32,3 +32,8 @@
   .desk__main { grid-template-columns: minmax(0, 1fr); }
   .desk__main > * { min-height: 22rem; }
 }
+
+/* Nothing may scroll the desk out of view (focus or an anchor could otherwise shift a hidden-overflow box and cut off the header). */
+@media not ((max-aspect-ratio: 11/10) or (max-width: 900px)) {
+  html, body, .app { overflow: clip; }
+}
